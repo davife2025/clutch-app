@@ -1,0 +1,23 @@
+{
+  "name": "clutch-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Your wallets. Always there.",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:push": "turbo db:push --filter=@clutch/api",
+    "db:generate": "turbo db:generate --filter=@clutch/api",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "packageManager": "pnpm@9.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}
