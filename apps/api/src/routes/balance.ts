@@ -73,8 +73,10 @@ balanceRoutes.get('/:pocketId', async (c) => {
 
 /**
  * GET /balances/:pocketId/summary
- * The unified pocket view — total USD, native SOL balance, per-wallet breakdown.
- * This is the core "pocket" endpoint.
+ *
+ * The unified pocket view — Clutch's signature endpoint.
+ * Cleanly separates Solana wallets (signing-capable) from external balances
+ * (EVM, read-only) to reflect Clutch's Solana-native architecture.
  */
 balanceRoutes.get('/:pocketId/summary', async (c) => {
   const userId = c.get('userId')
@@ -92,8 +94,7 @@ balanceRoutes.get('/:pocketId/summary', async (c) => {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Pocket not found' } }, 404)
   }
 
-  // Compute per-wallet USD totals
-  const walletSummaries = pocket.wallets.map((w) => {
+  const formatWallet = (w: typeof pocket.wallets[number]) => {
     const walletUsd = w.balances.reduce((sum, b) => sum + parseFloat(b.usdValue ?? '0'), 0)
     return {
       walletId: w.id,
@@ -102,6 +103,7 @@ balanceRoutes.get('/:pocketId/summary', async (c) => {
       chain: w.chain,
       connectionType: w.connectionType,
       isDefault: w.isDefault,
+      canSign: w.chain === 'solana' && w.connectionType !== 'manual',
       usdValue: Math.round(walletUsd * 100) / 100,
       tokens: w.balances.map((b) => ({
         token: b.token,
@@ -110,9 +112,14 @@ balanceRoutes.get('/:pocketId/summary', async (c) => {
         usdValue: b.usdValue,
       })),
     }
-  })
+  }
 
-  const totalUsd = walletSummaries.reduce((sum, w) => sum + w.usdValue, 0)
+  const solanaWallets = pocket.wallets.filter((w) => w.chain === 'solana').map(formatWallet)
+  const externalBalances = pocket.wallets.filter((w) => w.chain !== 'solana').map(formatWallet)
+
+  const solanaUsd = solanaWallets.reduce((sum, w) => sum + w.usdValue, 0)
+  const externalUsd = externalBalances.reduce((sum, w) => sum + w.usdValue, 0)
+  const totalUsd = solanaUsd + externalUsd
 
   return c.json({
     data: {
@@ -120,8 +127,13 @@ balanceRoutes.get('/:pocketId/summary', async (c) => {
       name: pocket.name,
       totalUsd: Math.round(totalUsd * 100) / 100,
       nativeBalanceSol: lamportsToSol(pocket.nativeBalance),
+      solanaUsd: Math.round(solanaUsd * 100) / 100,
+      externalUsd: Math.round(externalUsd * 100) / 100,
       walletCount: pocket.wallets.length,
-      wallets: walletSummaries,
+      // Solana wallets — signing-capable, can be used for payments
+      solanaWallets,
+      // External balances — read-only, shown for portfolio completeness
+      externalBalances,
     },
   })
 })

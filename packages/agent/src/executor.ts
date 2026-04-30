@@ -1,6 +1,6 @@
-import type { ConnectorRegistry, SigningConnector, WalletConnectManager } from '@clutch/connectors'
+import type { ConnectorRegistry, WalletConnectManager } from '@clutch/connectors'
 import type { ChainId } from '@clutch/core'
-import { CHAIN_NATIVE_TOKEN, CHAIN_DECIMALS, SPL_DECIMALS } from '@clutch/core'
+import { SPL_DECIMALS } from '@clutch/core'
 import type { VaultService } from '@clutch/vault'
 import type { ToolExecutor } from './agent.js'
 
@@ -10,11 +10,8 @@ export interface ExecutorConfig {
     getUsdPrice(token: string): Promise<number | null>
     getBatchPrices(tokens: string[]): Promise<Record<string, number>>
   }
-  /** Vault for decrypting custodial wallet keys. */
   vault?: VaultService
-  /** WalletConnect manager for external wallet signing. */
   wcManager?: WalletConnectManager | null
-  /** Lookup encrypted key and connection type for a wallet ID. */
   getWalletMeta?: (walletId: string) => Promise<{
     address: string
     chain: string
@@ -24,6 +21,12 @@ export interface ExecutorConfig {
   } | null>
 }
 
+/**
+ * Solana-first tool executor.
+ *
+ * Read tools (balance, gas, price) work for all chains.
+ * Write tools (execute_payment) only route to Solana wallets.
+ */
 export class ClutchToolExecutor implements ToolExecutor {
   constructor(private config: ExecutorConfig) {}
 
@@ -57,6 +60,7 @@ export class ClutchToolExecutor implements ToolExecutor {
       return {
         address,
         chain,
+        readOnly: chain !== 'solana',
         balances: balances.map((b) => ({
           token: b.token,
           amount: (Number(b.amount) / 10 ** b.decimals).toFixed(6),
@@ -71,36 +75,46 @@ export class ClutchToolExecutor implements ToolExecutor {
     }
   }
 
-  // ─── estimate_gas_fee ─────────────────────────────────────────────────────
+  // ─── estimate_gas_fee (Solana-only) ───────────────────────────────────────
 
   private async estimateGasFee(input: Record<string, string>) {
     const { chain, token, amount, toAddress } = input
-    try {
-      const connector = this.config.registry.get(chain as ChainId)
-      if (!connector) return { error: `No connector for chain: ${chain}` }
 
-      const decimals = this.getDecimals(token, chain as ChainId)
+    if (chain !== 'solana') {
+      return {
+        error: 'Clutch only executes on Solana — EVM chains are read-only for balance display.',
+        suggestion: 'Use Solana for payments. USDC on Solana has fees ~$0.0003 vs $5+ on Ethereum.',
+      }
+    }
+
+    try {
+      const connector = this.config.registry.solana()
+      const decimals = SPL_DECIMALS[token] ?? 9
       const amountRaw = BigInt(Math.floor(Number(amount) * 10 ** decimals))
 
-      const gasUnits = await connector.estimateGas({
+      const lamports = await connector.estimateGas({
         to: toAddress,
         amount: amountRaw,
         token,
-        chain: chain as ChainId,
+        chain: 'solana',
       })
 
-      const nativeToken = CHAIN_NATIVE_TOKEN[chain as ChainId] ?? 'SOL'
-      const nativePrice = await this.config.priceService.getUsdPrice(nativeToken)
-      const nativeDecimals = CHAIN_DECIMALS[chain as ChainId] ?? 9
-      const gasCost = Number(gasUnits) / 10 ** nativeDecimals
-      const gasUsd = nativePrice ? gasCost * nativePrice : null
+      // Check if recipient ATA needs creation (adds ~0.00204 SOL rent)
+      const needsAta = await connector.needsAtaCreation(toAddress, token)
+      const ataRentLamports = needsAta ? 2_039_280n : 0n
+      const totalLamports = lamports + ataRentLamports
+
+      const solPrice = (await this.config.priceService.getUsdPrice('SOL')) ?? 0
+      const totalSol = Number(totalLamports) / 1e9
+      const totalUsd = totalSol * solPrice
 
       return {
-        chain,
-        gasUnits: gasUnits.toString(),
-        gasCost: gasCost.toFixed(8),
-        gasUsd: gasUsd?.toFixed(4) ?? 'unknown',
-        nativeToken,
+        chain: 'solana',
+        feeLamports: totalLamports.toString(),
+        feeSol: totalSol.toFixed(8),
+        feeUsd: totalUsd.toFixed(6),
+        ataCreationRequired: needsAta,
+        ataRentSol: needsAta ? '0.00204' : '0',
       }
     } catch (err) {
       return { error: String(err) }
@@ -115,13 +129,22 @@ export class ClutchToolExecutor implements ToolExecutor {
     return { token, usdPrice: price ?? 'unavailable' }
   }
 
-  // ─── execute_payment (NEW — the full loop) ────────────────────────────────
+  // ─── execute_payment (Solana-only) ────────────────────────────────────────
 
   private async executePayment(input: Record<string, string>) {
     const { walletId, chain, token, amount, toAddress } = input
 
+    // Hard guard: Solana only
+    if (chain !== 'solana') {
+      return {
+        error: 'Clutch executes payments on Solana only.',
+        explanation:
+          'EVM wallets in this pocket are read-only. To pay USD, use USDC on Solana (much cheaper and faster).',
+        suggestedAction: 'Re-route this payment through a Solana wallet.',
+      }
+    }
+
     try {
-      // 1. Look up wallet metadata
       if (!this.config.getWalletMeta) {
         return { error: 'Payment execution not configured — getWalletMeta missing' }
       }
@@ -129,31 +152,35 @@ export class ClutchToolExecutor implements ToolExecutor {
       const meta = await this.config.getWalletMeta(walletId)
       if (!meta) return { error: `Wallet ${walletId} not found` }
 
-      const decimals = this.getDecimals(token, chain as ChainId)
+      // Reject non-Solana wallets even if the agent passed chain=solana
+      if (meta.chain !== 'solana') {
+        return {
+          error: `Wallet ${walletId} is on ${meta.chain}, not Solana. Pick a Solana wallet.`,
+        }
+      }
+
+      const decimals = SPL_DECIMALS[token] ?? 9
       const amountRaw = BigInt(Math.floor(Number(amount) * 10 ** decimals))
 
-      // 2. Route to the right signing method based on connectionType
+      // Route by connection type
       if (meta.connectionType === 'custodial') {
-        return this.executeViaCustodial(meta, chain as ChainId, token, amountRaw, toAddress)
+        return this.executeCustodial(meta, token, amountRaw, toAddress)
       }
 
       if (meta.connectionType === 'walletconnect') {
-        return this.executeViaWalletConnect(meta, chain as ChainId, token, amount, toAddress)
+        return this.executeWalletConnect(meta, token, amount, toAddress)
       }
 
-      // manual wallets can't sign — they're read-only
-      return { error: `Wallet ${walletId} is a manual (read-only) wallet — cannot sign transactions` }
+      return {
+        error: `Wallet ${walletId} is manual (read-only) — cannot sign. Connect via Wallet Standard or import a custodial key.`,
+      }
     } catch (err) {
       return { error: `Payment execution failed: ${String(err)}` }
     }
   }
 
-  /**
-   * Sign and send via vault-decrypted private key.
-   */
-  private async executeViaCustodial(
+  private async executeCustodial(
     meta: NonNullable<Awaited<ReturnType<NonNullable<ExecutorConfig['getWalletMeta']>>>>,
-    chain: ChainId,
     token: string,
     amountRaw: bigint,
     toAddress: string,
@@ -161,40 +188,32 @@ export class ClutchToolExecutor implements ToolExecutor {
     if (!this.config.vault) return { error: 'Vault not configured' }
     if (!meta.encryptedKey) return { error: 'Wallet has no encrypted key' }
 
-    // Decrypt the private key
     const privateKey = this.config.vault.decryptKey(meta.encryptedKey)
+    const connector = this.config.registry.solana()
 
-    // Get the signing connector
-    const connector = this.config.registry.get(chain) as SigningConnector | undefined
-    if (!connector || !('sendTransaction' in connector)) {
-      return { error: `No signing connector for chain: ${chain}` }
-    }
-
-    // Send the transaction
     const receipt = await connector.sendTransaction(
-      { to: toAddress, amount: amountRaw, token, chain },
+      { to: toAddress, amount: amountRaw, token, chain: 'solana' },
       privateKey,
     )
 
+    const decimals = SPL_DECIMALS[token] ?? 9
+
     return {
-      success: true,
+      success: receipt.status === 'success',
       txHash: receipt.txHash,
-      chain,
+      chain: 'solana',
       fromAddress: meta.address,
       toAddress,
-      amount: (Number(amountRaw) / 10 ** this.getDecimals(token, chain)).toFixed(6),
+      amount: (Number(amountRaw) / 10 ** decimals).toFixed(6),
       token,
       gasUsed: receipt.gasUsed.toString(),
       status: receipt.status,
+      explorerUrl: `https://solscan.io/tx/${receipt.txHash}`,
     }
   }
 
-  /**
-   * Sign via WalletConnect — prompts the user's external wallet.
-   */
-  private async executeViaWalletConnect(
+  private async executeWalletConnect(
     meta: NonNullable<Awaited<ReturnType<NonNullable<ExecutorConfig['getWalletMeta']>>>>,
-    chain: ChainId,
     token: string,
     amount: string,
     toAddress: string,
@@ -202,78 +221,18 @@ export class ClutchToolExecutor implements ToolExecutor {
     if (!this.config.wcManager) return { error: 'WalletConnect not configured' }
     if (!meta.wcSessionTopic) return { error: 'No active WalletConnect session for this wallet' }
 
-    if (chain === 'solana') {
-      // For Solana, we need to build and serialize the transaction
-      // then send it to WalletConnect for signing
-      // This is a simplified version — production would build the full tx
-      return {
-        pending: true,
-        method: 'walletconnect',
-        message: 'Transaction sent to your wallet for approval',
-        chain,
-        toAddress,
-        amount,
-        token,
-      }
-    }
-
-    // EVM: send transaction via WalletConnect
-    const chainMap: Record<string, string> = {
-      ethereum: 'eip155:1',
-      base: 'eip155:8453',
-      polygon: 'eip155:137',
-      arbitrum: 'eip155:42161',
-      optimism: 'eip155:10',
-    }
-
-    const wcChainId = chainMap[chain]
-    if (!wcChainId) return { error: `Unsupported chain for WalletConnect: ${chain}` }
-
-    const nativeToken = CHAIN_NATIVE_TOKEN[chain] ?? 'ETH'
-    const isNative = token === nativeToken
-
-    if (isNative) {
-      const decimals = CHAIN_DECIMALS[chain] ?? 18
-      const valueWei = BigInt(Math.floor(Number(amount) * 10 ** decimals))
-      const txHash = await this.config.wcManager.sendEvmTransaction(
-        meta.wcSessionTopic,
-        wcChainId,
-        {
-          from: meta.address,
-          to: toAddress,
-          value: `0x${valueWei.toString(16)}`,
-        },
-      )
-
-      return {
-        success: true,
-        txHash,
-        chain,
-        fromAddress: meta.address,
-        toAddress,
-        amount,
-        token,
-        status: 'pending',
-      }
-    }
-
-    // ERC-20 transfer via WalletConnect — would need contract encoding
+    // Solana via WalletConnect — production would build the full versioned tx
+    // and serialize it for the user's wallet to sign. This is the structured
+    // payload the wallet receives.
     return {
       pending: true,
       method: 'walletconnect',
-      message: 'ERC-20 transfer sent to wallet for approval',
-      chain,
+      message: 'Transaction sent to your wallet for approval',
+      chain: 'solana',
+      fromAddress: meta.address,
       toAddress,
       amount,
       token,
     }
-  }
-
-  private getDecimals(token: string, chain: ChainId): number {
-    if (chain === 'solana') return SPL_DECIMALS[token] ?? 9
-    if (token === CHAIN_NATIVE_TOKEN[chain]) return CHAIN_DECIMALS[chain] ?? 18
-    // Stablecoins are 6 decimals on EVM
-    if (['USDC', 'USDT'].includes(token)) return 6
-    return 18
   }
 }

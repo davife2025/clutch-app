@@ -46,12 +46,26 @@ payRoutes.post('/:id/pay/agent', async (c) => {
     )
   }
 
+  // Hard guard: Solana only
+  if (chain && chain !== 'solana') {
+    return c.json(
+      {
+        error: {
+          code: 'CHAIN_NOT_SUPPORTED',
+          message: 'Clutch executes payments on Solana only. EVM wallets are read-only.',
+          hint: 'Drop the `chain` field to let the agent route through Solana automatically.',
+        },
+      },
+      400,
+    )
+  }
+
   try {
     const result = await agentService.executePayment(pocketId, {
       to,
       amount: String(amount),
       token,
-      chain,
+      chain: 'solana',
       memo,
     })
 

@@ -17,6 +17,7 @@
     "@walletconnect/types": "^2.23.9",
     "@walletconnect/utils": "^2.23.9",
     "bs58": "^6.0.0",
+    "tweetnacl": "^1.0.3",
     "viem": "^2.48.4"
   },
   "devDependencies": {

@@ -1,19 +1,21 @@
 import {
   Connection,
   PublicKey,
-  Transaction,
+  TransactionMessage,
+  VersionedTransaction,
   SystemProgram,
-  sendAndConfirmTransaction,
+  ComputeBudgetProgram,
   Keypair,
 } from '@solana/web3.js'
 import {
   getAssociatedTokenAddress,
   getAccount,
   createTransferInstruction,
+  createAssociatedTokenAccountInstruction,
   TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from '@solana/spl-token'
 import type { SigningConnector, TokenBalance, TxRequest, TxReceipt } from '../types.js'
-import type { ChainId } from '@clutch/core'
 import bs58 from 'bs58'
 
 const KNOWN_SPL_TOKENS: Array<{ symbol: string; mint: string; decimals: number }> = [
@@ -26,8 +28,20 @@ const KNOWN_SPL_TOKENS: Array<{ symbol: string; mint: string; decimals: number }
   { symbol: 'JTO', mint: 'jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL', decimals: 9 },
 ]
 
+const DEFAULT_PRIORITY_FEE_MICRO_LAMPORTS = 50_000 // 0.00005 SOL per CU
+const DEFAULT_COMPUTE_UNIT_LIMIT = 200_000
+
+/**
+ * Production-grade Solana connector for Clutch.
+ *
+ * Features:
+ *   - Versioned transactions (v0)
+ *   - Priority fees via ComputeBudgetProgram
+ *   - Automatic ATA creation for SPL transfers
+ *   - Transaction confirmation with timeout
+ */
 export class SolanaConnector implements SigningConnector {
-  readonly chain: ChainId = 'solana'
+  readonly chain = 'solana' as const
   readonly name = 'Solana'
   private connection: Connection
 
@@ -54,11 +68,11 @@ export class SolanaConnector implements SigningConnector {
     const pubkey = new PublicKey(address)
     const results: TokenBalance[] = []
 
-    // SOL native balance
+    // Native SOL
     const lamports = await this.connection.getBalance(pubkey)
     results.push({ token: 'SOL', amount: BigInt(lamports), decimals: 9 })
 
-    // SPL tokens — fetch in parallel, ignore missing accounts
+    // SPL tokens — parallel, ignore missing
     await Promise.allSettled(
       KNOWN_SPL_TOKENS.map(async (token) => {
         try {
@@ -74,7 +88,7 @@ export class SolanaConnector implements SigningConnector {
             })
           }
         } catch {
-          // Token account doesn't exist — wallet doesn't hold this token
+          // Token account doesn't exist
         }
       }),
     )
@@ -82,10 +96,13 @@ export class SolanaConnector implements SigningConnector {
     return results
   }
 
-  async estimateGas(_request: TxRequest): Promise<bigint> {
-    // Solana uses a flat fee model — base fee is 5000 lamports per signature
-    // Priority fees are additional but we use the base for estimation
-    return 5000n
+  async estimateGas(request: TxRequest): Promise<bigint> {
+    // Solana fee = 5000 lamports per signature + priority fee
+    const priorityMicroLamports =
+      request.priorityFeeMicroLamports ?? DEFAULT_PRIORITY_FEE_MICRO_LAMPORTS
+    const computeUnits = request.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT
+    const priorityCost = BigInt(Math.ceil((priorityMicroLamports * computeUnits) / 1_000_000))
+    return 5000n + priorityCost
   }
 
   async sendTransaction(request: TxRequest, privateKeyBase58: string): Promise<TxReceipt> {
@@ -93,10 +110,18 @@ export class SolanaConnector implements SigningConnector {
     const keypair = Keypair.fromSecretKey(secretKey)
     const toPubkey = new PublicKey(request.to)
 
-    const transaction = new Transaction()
+    const priorityMicroLamports =
+      request.priorityFeeMicroLamports ?? DEFAULT_PRIORITY_FEE_MICRO_LAMPORTS
+    const computeUnits = request.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT
+
+    // Build instructions
+    const instructions = [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityMicroLamports }),
+    ]
 
     if (request.token === 'SOL') {
-      transaction.add(
+      instructions.push(
         SystemProgram.transfer({
           fromPubkey: keypair.publicKey,
           toPubkey,
@@ -111,28 +136,102 @@ export class SolanaConnector implements SigningConnector {
       const fromAta = await getAssociatedTokenAddress(mint, keypair.publicKey)
       const toAta = await getAssociatedTokenAddress(mint, toPubkey)
 
-      transaction.add(
-        createTransferInstruction(fromAta, toAta, keypair.publicKey, request.amount, [], TOKEN_PROGRAM_ID),
+      // Check if recipient has the ATA — create it if not
+      const toAtaInfo = await this.connection.getAccountInfo(toAta)
+      if (!toAtaInfo) {
+        instructions.push(
+          createAssociatedTokenAccountInstruction(
+            keypair.publicKey, // payer
+            toAta,
+            toPubkey, // owner
+            mint,
+            TOKEN_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID,
+          ),
+        )
+      }
+
+      instructions.push(
+        createTransferInstruction(
+          fromAta,
+          toAta,
+          keypair.publicKey,
+          request.amount,
+          [],
+          TOKEN_PROGRAM_ID,
+        ),
       )
     }
 
-    const txHash = await sendAndConfirmTransaction(this.connection, transaction, [keypair])
-    const txInfo = await this.connection.getTransaction(txHash, { commitment: 'confirmed' })
+    // Build versioned transaction
+    const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed')
+
+    const message = new TransactionMessage({
+      payerKey: keypair.publicKey,
+      recentBlockhash: blockhash,
+      instructions,
+    }).compileToV0Message()
+
+    const tx = new VersionedTransaction(message)
+    tx.sign([keypair])
+
+    // Send with confirmation
+    const txHash = await this.connection.sendTransaction(tx, {
+      skipPreflight: false,
+      maxRetries: 3,
+      preflightCommitment: 'confirmed',
+    })
+
+    // Wait for confirmation
+    const confirmation = await this.connection.confirmTransaction(
+      { signature: txHash, blockhash, lastValidBlockHeight },
+      'confirmed',
+    )
+
+    if (confirmation.value.err) {
+      return {
+        txHash,
+        blockNumber: 0n,
+        gasUsed: 5000n,
+        status: 'reverted',
+      }
+    }
+
+    const txInfo = await this.connection.getTransaction(txHash, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    })
 
     return {
       txHash,
       blockNumber: BigInt(txInfo?.slot ?? 0),
       gasUsed: BigInt(txInfo?.meta?.fee ?? 5000),
-      status: txInfo?.meta?.err ? 'reverted' : 'success',
+      status: 'success',
     }
   }
 
   async signMessage(message: string, privateKeyBase58: string): Promise<string> {
+    const { sign } = await import('tweetnacl')
     const secretKey = bs58.decode(privateKeyBase58)
     const keypair = Keypair.fromSecretKey(secretKey)
     const encoded = new TextEncoder().encode(message)
-    // @ts-expect-error — Keypair.sign exists at runtime but types lag
-    const signature = keypair.sign(encoded)
+    const signature = sign.detached(encoded, keypair.secretKey)
     return bs58.encode(signature)
+  }
+
+  /** Check if a recipient address has an ATA for a given token. Used for fee preview. */
+  async needsAtaCreation(toAddress: string, tokenSymbol: string): Promise<boolean> {
+    const tokenInfo = KNOWN_SPL_TOKENS.find((t) => t.symbol === tokenSymbol)
+    if (!tokenInfo || tokenSymbol === 'SOL') return false
+
+    try {
+      const toPubkey = new PublicKey(toAddress)
+      const mint = new PublicKey(tokenInfo.mint)
+      const toAta = await getAssociatedTokenAddress(mint, toPubkey)
+      const info = await this.connection.getAccountInfo(toAta)
+      return info === null
+    } catch {
+      return false
+    }
   }
 }

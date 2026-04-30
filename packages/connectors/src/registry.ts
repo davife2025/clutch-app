@@ -1,7 +1,7 @@
 import type { ChainId } from '@clutch/core'
 import { EVMConnector } from './providers/evm.js'
 import { SolanaConnector } from './providers/solana.js'
-import type { WalletConnector } from './types.js'
+import type { ReadOnlyConnector, SigningConnector } from './types.js'
 
 export interface RegistryConfig {
   solanaRpcUrl?: string
@@ -21,17 +21,20 @@ const PUBLIC_RPCS: Record<string, string> = {
   optimism: 'https://mainnet.optimism.io',
 }
 
+/**
+ * ConnectorRegistry — manages chain connectors for Clutch.
+ *
+ * Solana is the only signing chain. EVM chains are read-only (for the pocket
+ * aggregation view). Use `solana()` to get the signing connector, and `get()`
+ * for any read-only access.
+ */
 export class ConnectorRegistry {
-  private connectors = new Map<ChainId, WalletConnector>()
+  private solanaConnector: SolanaConnector
+  private evmConnectors = new Map<ChainId, EVMConnector>()
 
   constructor(config: RegistryConfig = {}) {
-    // Solana — primary chain, always first
-    this.connectors.set(
-      'solana',
-      new SolanaConnector(config.solanaRpcUrl ?? PUBLIC_RPCS.solana),
-    )
+    this.solanaConnector = new SolanaConnector(config.solanaRpcUrl ?? PUBLIC_RPCS.solana)
 
-    // EVM chains
     const evmMap: Array<[ChainId, string | undefined, string]> = [
       ['ethereum', config.ethRpcUrl, PUBLIC_RPCS.ethereum],
       ['base', config.baseRpcUrl, PUBLIC_RPCS.base],
@@ -41,33 +44,41 @@ export class ConnectorRegistry {
     ]
 
     for (const [chain, configUrl, publicUrl] of evmMap) {
-      this.connectors.set(chain, new EVMConnector(chain, configUrl ?? publicUrl))
+      this.evmConnectors.set(chain, new EVMConnector(chain, configUrl ?? publicUrl))
     }
   }
 
-  get(chain: ChainId): WalletConnector | undefined {
-    return this.connectors.get(chain)
+  /** Get a read-only connector for any chain (Solana or EVM). */
+  get(chain: ChainId): ReadOnlyConnector | undefined {
+    if (chain === 'solana') return this.solanaConnector
+    return this.evmConnectors.get(chain)
   }
 
-  getOrThrow(chain: ChainId): WalletConnector {
-    const c = this.connectors.get(chain)
+  getOrThrow(chain: ChainId): ReadOnlyConnector {
+    const c = this.get(chain)
     if (!c) throw new Error(`No connector registered for chain: ${chain}`)
     return c
   }
 
-  solana(): WalletConnector {
-    return this.getOrThrow('solana')
+  /** Get the Solana signing connector — the only chain Clutch transacts on. */
+  solana(): SigningConnector {
+    return this.solanaConnector
   }
 
-  all(): WalletConnector[] {
-    return [...this.connectors.values()]
+  /** Get a SigningConnector — only Solana qualifies. */
+  getSigningConnector(chain: ChainId): SigningConnector | null {
+    return chain === 'solana' ? this.solanaConnector : null
+  }
+
+  all(): ReadOnlyConnector[] {
+    return [this.solanaConnector, ...this.evmConnectors.values()]
   }
 
   async pingAll(): Promise<Partial<Record<ChainId, boolean>>> {
     const results: Partial<Record<ChainId, boolean>> = {}
     await Promise.allSettled(
-      [...this.connectors.entries()].map(async ([chain, connector]) => {
-        results[chain] = await connector.ping()
+      this.all().map(async (connector) => {
+        results[connector.chain] = await connector.ping()
       }),
     )
     return results

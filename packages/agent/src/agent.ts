@@ -228,46 +228,58 @@ Analyse the user's portfolio and return ONLY valid JSON — no markdown, no prea
 // ── Prompt builders ──────────────────────────────────────────────────────────
 
 function buildPaymentSystemPrompt(ctx: PocketContext): string {
-  const walletSummary = ctx.wallets
-    .map((w) => {
-      const bals = w.balances
-        .map(
-          (b) =>
-            `    ${b.token}: ${(Number(b.amount) / 10 ** b.decimals).toFixed(6)} (~$${b.usdValue ?? '?'})`,
-        )
-        .join('\n')
-      return `  Wallet ${w.wallet.id} [${w.wallet.chain}] ${w.wallet.label ?? w.wallet.address.slice(0, 8)}...
+  const solanaWallets = ctx.wallets.filter((w) => w.wallet.chain === 'solana')
+  const evmWallets = ctx.wallets.filter((w) => w.wallet.chain !== 'solana')
+
+  const formatWallet = (w: typeof ctx.wallets[number]) => {
+    const bals = w.balances
+      .map(
+        (b) =>
+          `    ${b.token}: ${(Number(b.amount) / 10 ** b.decimals).toFixed(6)} (~$${b.usdValue ?? '?'})`,
+      )
+      .join('\n')
+    return `  Wallet ${w.wallet.id} [${w.wallet.chain}] ${w.wallet.label ?? w.wallet.address.slice(0, 8)}...
     Type: ${w.wallet.type} · Connection: ${w.wallet.connectionType}${w.wallet.isDefault ? ' (default)' : ''}
 ${bals || '    (no balances cached)'}`
-    })
-    .join('\n\n')
+  }
 
-  return `You are Clutch's AI payment router for a Solana-first wallet pocket.
+  const solanaSection = solanaWallets.length
+    ? solanaWallets.map(formatWallet).join('\n\n')
+    : '  (no Solana wallets — payment cannot be executed)'
+
+  const evmSection = evmWallets.length
+    ? evmWallets.map(formatWallet).join('\n\n')
+    : '  (none)'
+
+  return `You are Clutch's AI payment router. Clutch is Solana-native.
 
 POCKET: "${ctx.pocketName}"
-Native SOL balance (in pocket): ${ctx.nativeBalanceSol} SOL (~$${ctx.nativeBalanceUsd.toFixed(2)})
+Native SOL in pocket: ${ctx.nativeBalanceSol} SOL (~$${ctx.nativeBalanceUsd.toFixed(2)})
 Total portfolio value: $${ctx.totalUsdValue.toFixed(2)}
 
-WALLETS:
-${walletSummary}
+═══ SOLANA WALLETS (signing-capable) ═══
+${solanaSection}
+
+═══ EXTERNAL BALANCES (read-only, cannot sign) ═══
+${evmSection}
+
+CORE RULE: Clutch executes payments ONLY on Solana.
+- EVM wallets are shown for portfolio completeness but CANNOT be used for payment
+- For USD payments, use USDC on Solana (~$0.0003 fee, sub-second finality)
+- For SOL payments, use native SOL from a Solana wallet
+- "manual" connectionType wallets are read-only — pick "custodial" or "walletconnect"
 
 YOUR JOB:
-1. Understand the payment request
-2. Use tools to check balances and estimate fees
-3. Select the optimal wallet:
-   - Prefer Solana — lower fees, faster finality
-   - Prefer USDC on Solana for USD-denominated payments
-   - Prefer the default wallet when it has enough funds
-   - Fall back to EVM chains only if no Solana option works
-   - ONLY pick wallets with connectionType "custodial" or "walletconnect" — "manual" wallets cannot sign
-4. Call select_payment_wallet with your decision
-5. Then call execute_payment to send the transaction
+1. Use tools to check Solana wallet balances and estimate fees
+2. Pick the best Solana wallet (default first if it has funds)
+3. Call select_payment_wallet — chain MUST be "solana"
+4. Call execute_payment to send the transaction
 
-Be decisive. Explain your reasoning clearly.`
+If no Solana wallet has sufficient balance, say so clearly. Do NOT route to EVM.`
 }
 
 function buildPaymentUserMessage(req: PaymentRequest): string {
-  return `Pay ${req.amount} ${req.token} to ${req.to}${req.chain ? ` on ${req.chain}` : ' (pick best chain — prefer Solana)'}${req.memo ? `\nMemo: ${req.memo}` : ''}`
+  return `Pay ${req.amount} ${req.token} to ${req.to} on Solana${req.memo ? `\nMemo: ${req.memo}` : ''}`
 }
 
 function buildAnalysisPrompt(ctx: PocketContext): string {
@@ -298,13 +310,17 @@ POCKET: ${JSON.stringify({ name: ctx.pocketName, totalUsd: ctx.totalUsdValue, na
 }
 
 function buildChatSystemPrompt(ctx: PocketContext): string {
-  return `You are Clutch's AI assistant — a Solana-first wallet agent.
+  const solanaCount = ctx.wallets.filter((w) => w.wallet.chain === 'solana').length
+  const evmCount = ctx.wallets.length - solanaCount
+  return `You are Clutch's AI assistant — a Solana-native wallet agent.
 
 POCKET: "${ctx.pocketName}"
 Total value: $${ctx.totalUsdValue.toFixed(2)}
-Wallets: ${ctx.wallets.length} (${ctx.wallets.filter((w) => w.wallet.chain === 'solana').length} Solana)
+Solana wallets: ${solanaCount} (signing-capable)
+External (read-only): ${evmCount}
 Native SOL in pocket: ${ctx.nativeBalanceSol} SOL
 
-You can check balances, estimate gas, look up prices, and execute payments.
-Be concise and practical.`
+You specialize in Solana — SPL tokens, lamports, priority fees, ATAs, the Solana ecosystem.
+Payments execute on Solana only. EVM wallets are external balances shown for completeness.
+Be concise and practical. Cite Solana primitives when relevant (e.g. "ATA creation costs 0.00204 SOL").`
 }
