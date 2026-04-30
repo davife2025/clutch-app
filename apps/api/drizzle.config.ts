@@ -5,7 +5,11 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgresql://clutch:clutch@localhost:5432/clutch',
+    // Use the DIRECT connection for migrations — Supabase pooler doesn't support DDL
+    url:
+      process.env.DATABASE_URL_DIRECT ??
+      process.env.DATABASE_URL ??
+      'postgresql://postgres:postgres@localhost:5432/postgres',
   },
   verbose: true,
   strict: true,

@@ -12,7 +12,8 @@ Clutch is a **Solana-first** unified wallet pocket. Connect your Phantom, Backpa
 
 ```bash
 pnpm install
-bash scripts/setup.sh     # starts Postgres, pushes schema
+cp .env.example .env     # fill in Supabase DATABASE_URL
+bash scripts/setup.sh     # pushes schema to Supabase
 pnpm dev                   # API → :3001
 ```
 
@@ -45,8 +46,8 @@ packages/
 | 2 | Auth · pocket CRUD · wallet CRUD | ✅ |
 | 3 | Connectors · balance sync · price service | ✅ |
 | 4 | Encrypted vault · native SOL deposit/withdraw | ✅ |
-| 5 | WalletConnect — connect external wallets | 🔜 Next |
-| 6 | AI agent with end-to-end payment execution | |
+| 5 | WalletConnect — connect external wallets | ✅ |
+| 6 | AI agent with end-to-end payment execution | 🔜 Next |
 | 7 | x402 payment protocol | |
 | 8 | Web dashboard (8 pages, not 16) | |
 | 9 | Mobile app — Expo | |
@@ -58,9 +59,9 @@ packages/
 
 ---
 
-## DB schema (v2)
+## DB schema (v2 · Supabase)
 
-Five tables. That's it.
+Five tables. That's it. Hosted on Supabase PostgreSQL.
 
 - **users** — email + password auth
 - **pockets** — the container that holds wallets + native SOL balance
@@ -72,4 +73,4 @@ Five tables. That's it.
 
 ## Tech stack
 
-Hono · PostgreSQL · Drizzle ORM · @solana/web3.js · viem · Claude AI · x402 · Next.js 14 · Expo SDK 51 · Chrome MV3 · Turborepo · pnpm
+Hono · Supabase PostgreSQL · Drizzle ORM · @solana/web3.js · viem · WalletConnect v2 · Claude AI · x402 · Next.js 14 · Expo SDK 51 · Chrome MV3 · Turborepo · pnpm
