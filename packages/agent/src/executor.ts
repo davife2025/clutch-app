@@ -1,4 +1,5 @@
 import type { ConnectorRegistry, WalletConnectManager } from '@clutch/connectors'
+import { getJupiterQuote, executeJupiterSwap } from '@clutch/connectors'
 import type { ChainId } from '@clutch/core'
 import { SPL_DECIMALS } from '@clutch/core'
 import type { VaultService } from '@clutch/vault'
@@ -12,6 +13,8 @@ export interface ExecutorConfig {
   }
   vault?: VaultService
   wcManager?: WalletConnectManager | null
+  /** Solana RPC URL — needed for swap execution */
+  solanaRpcUrl?: string
   getWalletMeta?: (walletId: string) => Promise<{
     address: string
     chain: string
@@ -40,6 +43,10 @@ export class ClutchToolExecutor implements ToolExecutor {
         return this.getTokenPrice(input)
       case 'execute_payment':
         return this.executePayment(input)
+      case 'quote_swap':
+        return this.quoteSwap(input)
+      case 'swap_tokens':
+        return this.swapTokens(input)
       default:
         return { error: `Unknown tool: ${toolName}` }
     }
@@ -233,6 +240,107 @@ export class ClutchToolExecutor implements ToolExecutor {
       toAddress,
       amount,
       token,
+    }
+  }
+
+  // ─── quote_swap (Jupiter quote) ───────────────────────────────────────────
+
+  private async quoteSwap(input: Record<string, string>) {
+    const { inputToken, outputToken, amount } = input
+
+    try {
+      const quote = await getJupiterQuote({
+        inputToken,
+        outputToken,
+        amount,
+        slippageBps: 50,
+      })
+
+      if (!quote) {
+        return {
+          error: `No swap route from ${inputToken} to ${outputToken}`,
+          suggestion: 'Try a different token pair or check token symbols.',
+        }
+      }
+
+      // Get USD value for context
+      const outputPrice = await this.config.priceService.getUsdPrice(outputToken)
+      const outputUsd = outputPrice
+        ? (Number(quote.outputAmount) * outputPrice).toFixed(2)
+        : null
+
+      return {
+        inputToken: quote.inputToken,
+        outputToken: quote.outputToken,
+        inputAmount: quote.inputAmount,
+        outputAmount: quote.outputAmount,
+        minimumReceived: quote.minimumReceived,
+        priceImpactPct: quote.priceImpactPct,
+        outputUsdValue: outputUsd,
+        route: quote.route,
+        exchange: 'Jupiter',
+      }
+    } catch (err) {
+      return { error: `Quote failed: ${String(err)}` }
+    }
+  }
+
+  // ─── swap_tokens (Jupiter swap execution) ─────────────────────────────────
+
+  private async swapTokens(input: Record<string, string>) {
+    const { walletId, inputToken, outputToken, amount, slippageBps } = input
+
+    if (!this.config.getWalletMeta) {
+      return { error: 'Swap execution not configured — getWalletMeta missing' }
+    }
+    if (!this.config.vault) {
+      return { error: 'Swap execution requires the vault — only custodial wallets can swap directly' }
+    }
+
+    const meta = await this.config.getWalletMeta(walletId)
+    if (!meta) return { error: `Wallet ${walletId} not found` }
+
+    if (meta.chain !== 'solana') {
+      return { error: 'Swaps only run on Solana wallets' }
+    }
+
+    if (meta.connectionType !== 'custodial') {
+      return {
+        error: `Wallet ${walletId} is ${meta.connectionType}. Direct Jupiter swap requires a custodial wallet (vault-decryptable key).`,
+        suggestion:
+          'For WalletConnect wallets, the user should swap manually in their wallet first, then return to pay.',
+      }
+    }
+
+    if (!meta.encryptedKey) {
+      return { error: 'Custodial wallet has no encrypted key' }
+    }
+
+    const rpcUrl =
+      this.config.solanaRpcUrl ?? process.env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com'
+
+    try {
+      const privateKey = this.config.vault.decryptKey(meta.encryptedKey)
+
+      const result = await executeJupiterSwap(rpcUrl, privateKey, {
+        inputToken,
+        outputToken,
+        amount,
+        slippageBps: slippageBps ? Number(slippageBps) : 50,
+      })
+
+      return {
+        success: true,
+        txHash: result.txHash,
+        inputToken: result.inputToken,
+        outputToken: result.outputToken,
+        inputAmount: result.inputAmount,
+        outputAmount: result.outputAmount,
+        explorerUrl: `https://solscan.io/tx/${result.txHash}`,
+        message: `Swapped ${result.inputAmount} ${result.inputToken} for ${result.outputAmount} ${result.outputToken}`,
+      }
+    } catch (err) {
+      return { error: `Swap execution failed: ${String(err)}` }
     }
   }
 }

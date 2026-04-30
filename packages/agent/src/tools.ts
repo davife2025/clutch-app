@@ -76,6 +76,45 @@ export const AGENT_TOOLS: AgentTool[] = [
       required: ['walletId', 'chain', 'token', 'amount', 'toAddress'],
     },
   },
+  {
+    name: 'quote_swap',
+    description:
+      'Get a Jupiter quote for swapping one Solana token to another. Use this when the wallet does not hold the right token but holds something else that can be swapped (e.g. user has SOL but needs to pay USDC). Returns the expected output amount, price impact, and route.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        inputToken: { type: 'string', description: 'Token to swap from (e.g. SOL)' },
+        outputToken: { type: 'string', description: 'Token to swap to (e.g. USDC)' },
+        amount: {
+          type: 'string',
+          description: 'Human-readable amount of the input token to swap',
+        },
+      },
+      required: ['inputToken', 'outputToken', 'amount'],
+    },
+  },
+  {
+    name: 'swap_tokens',
+    description:
+      'Execute a Jupiter swap on Solana. Signs and broadcasts the swap transaction. Only call after quote_swap confirms the route is acceptable. Returns the txHash and the actual output amount received.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        walletId: {
+          type: 'string',
+          description: 'Wallet ID to swap from (must be a Solana custodial wallet)',
+        },
+        inputToken: { type: 'string', description: 'Token to swap from' },
+        outputToken: { type: 'string', description: 'Token to swap to' },
+        amount: { type: 'string', description: 'Human-readable amount of input token' },
+        slippageBps: {
+          type: 'string',
+          description: 'Slippage in basis points (default 50 = 0.5%)',
+        },
+      },
+      required: ['walletId', 'inputToken', 'outputToken', 'amount'],
+    },
+  },
 ]
 
 export const TOOL_NAMES = AGENT_TOOLS.map((t) => t.name)
