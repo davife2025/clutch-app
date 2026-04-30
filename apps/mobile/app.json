@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Clutch",
+    "slug": "clutch",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "clutch",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0B0A07"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.clutch.mobile"
+    },
+    "android": {
+      "package": "app.clutch.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0A07"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow Clutch to use Face ID to unlock your pocket."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

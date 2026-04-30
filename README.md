@@ -60,8 +60,8 @@ packages/
 | 7 | x402 payment protocol | ✅ |
 | 7.5 | **Solana hardening — versioned tx, priority fees, ATA, Wallet Standard** | ✅ |
 | 8 | Web dashboard | ✅ |
-| 9 | Mobile app — Expo | 🔜 Next |
-| 10 | Chrome extension | |
+| 9 | Mobile app — Expo | ✅ |
+| 10 | Chrome extension | 🔜 Next |
 | 11 | WebSocket real-time updates | |
 | 12 | Solana swap routing (Jupiter) for agent | |
 | 13 | Testing + CI/CD | |
