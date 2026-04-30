@@ -15,6 +15,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@clutch/agent": "workspace:*",
     "@clutch/connectors": "workspace:*",
     "@clutch/core": "workspace:*",
     "@clutch/vault": "workspace:*",

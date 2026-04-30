@@ -47,8 +47,8 @@ packages/
 | 3 | Connectors · balance sync · price service | ✅ |
 | 4 | Encrypted vault · native SOL deposit/withdraw | ✅ |
 | 5 | WalletConnect — connect external wallets | ✅ |
-| 6 | AI agent with end-to-end payment execution | 🔜 Next |
-| 7 | x402 payment protocol | |
+| 6 | AI agent with end-to-end payment execution | ✅ |
+| 7 | x402 payment protocol | 🔜 Next |
 | 8 | Web dashboard (8 pages, not 16) | |
 | 9 | Mobile app — Expo | |
 | 10 | Chrome extension | |

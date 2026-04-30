@@ -11,6 +11,8 @@ import { fundsRoutes } from './routes/funds.js'
 import { transactionRoutes } from './routes/transactions.js'
 import { webhookRoutes } from './routes/webhook.js'
 import { connectRoutes } from './routes/connect.js'
+import { agentRoutes } from './routes/agent.js'
+import { payRoutes } from './routes/pay.js'
 
 const app = new Hono()
 
@@ -31,9 +33,10 @@ app.route('/pockets', fundsRoutes)
 app.route('/transactions', transactionRoutes)
 app.route('/webhook', webhookRoutes)
 app.route('/pockets', connectRoutes)
+app.route('/agent', agentRoutes)
+app.route('/pockets', payRoutes)
 
-// Session 6: app.route('/agent', agentRoutes)
-// Session 6: app.route('/pockets', payRoutes)
+// Session 7: app.route('/x402', x402Routes)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 
