@@ -65,8 +65,8 @@ export class ClutchAgent {
             tool_use_id: block.id,
             content: JSON.stringify({ confirmed: true }),
           })
-        } else if (block.name === 'execute_payment') {
-          // In resolve-only mode, don't actually execute — just confirm selection
+        } else if (block.name === 'execute_payment' || block.name === 'swap_tokens') {
+          // In resolve-only mode, don't execute on-chain actions — just confirm selection
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -275,7 +275,18 @@ YOUR JOB:
 3. Call select_payment_wallet — chain MUST be "solana"
 4. Call execute_payment to send the transaction
 
-If no Solana wallet has sufficient balance, say so clearly. Do NOT route to EVM.`
+SWAP-THEN-PAY (for token mismatches):
+If a Solana wallet has enough total value but in the WRONG token (e.g. user wants
+to pay USDC but the wallet only has SOL), use this flow:
+  a) Call quote_swap to see the swap rate (input → output)
+  b) If price impact is acceptable (< 1% for stable pairs), call swap_tokens
+     to convert via Jupiter — this only works on custodial wallets
+  c) Then call select_payment_wallet and execute_payment with the new token
+Only use swap-then-pay when there's no Solana wallet that already holds the
+target token. Direct payment is always preferred.
+
+If no Solana wallet has sufficient balance (after considering swaps), say so
+clearly. Do NOT route to EVM.`
 }
 
 function buildPaymentUserMessage(req: PaymentRequest): string {

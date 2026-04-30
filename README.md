@@ -63,8 +63,8 @@ packages/
 | 9 | Mobile app — Expo | ✅ |
 | 10 | Chrome extension | ✅ |
 | 11 | WebSocket real-time updates | ✅ |
-| 12 | Solana swap routing (Jupiter) for agent | 🔜 Next |
-| 13 | Testing + CI/CD | |
+| 12 | Solana swap routing (Jupiter) for agent | ✅ |
+| 13 | Testing + CI/CD | 🔜 Next |
 | 14 | Production deployment | |
 
 ---

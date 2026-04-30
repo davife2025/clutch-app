@@ -67,6 +67,7 @@ function buildExecutor(): ClutchToolExecutor {
     priceService,
     vault: vaultService,
     wcManager,
+    solanaRpcUrl: process.env.SOLANA_RPC_URL,
     getWalletMeta: async (walletId: string) => {
       const wallet = await db.query.wallets.findFirst({
         where: eq(wallets.id, walletId),

@@ -10,3 +10,10 @@ export {
   type DetectedWallet,
   type ConnectedWallet,
 } from './walletstandard/adapter.js'
+export {
+  getJupiterQuote,
+  executeJupiterSwap,
+  type QuoteParams,
+  type QuoteResult,
+  type SwapResult,
+} from './swap/jupiter.js'
