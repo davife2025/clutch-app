@@ -2,14 +2,31 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Wallet, Sparkles, Plus, RefreshCw } from 'lucide-react'
+import { ArrowRight, Wallet, Sparkles, Plus, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatUsd, truncateAddress, chainLabel } from '@/lib/format'
+import { useClutchSocket } from '@/hooks/useClutchSocket'
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [livePulse, setLivePulse] = useState(false)
+
+  // Live updates via WebSocket
+  const { status: wsStatus } = useClutchSocket({
+    onEvent: (event) => {
+      if (event.type === 'balance_update' && summary && event.pocketId === summary.pocketId) {
+        // Refetch fresh summary so wallet-level breakdowns stay accurate
+        loadSummary()
+        setLivePulse(true)
+        setTimeout(() => setLivePulse(false), 800)
+      }
+      if (event.type === 'tx_confirmed' && summary && event.pocketId === summary.pocketId) {
+        loadSummary()
+      }
+    },
+  })
 
   useEffect(() => {
     loadSummary()
@@ -73,14 +90,40 @@ export default function DashboardPage() {
             {summary.name}
           </h1>
         </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-ink-200 hover:text-cream border border-ink-600 hover:border-ink-400 rounded-lg transition"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Syncing...' : 'Sync balances'}
-        </button>
+        <div className="flex items-center gap-2">
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${
+              wsStatus === 'open'
+                ? 'border-moss/30 text-moss bg-moss/5'
+                : 'border-ink-600 text-ink-400'
+            }`}
+            title={`WebSocket: ${wsStatus}`}
+          >
+            {wsStatus === 'open' ? (
+              <>
+                <span
+                  className={`w-1.5 h-1.5 rounded-full bg-moss ${
+                    livePulse ? 'animate-ping' : 'animate-pulse'
+                  }`}
+                />
+                Live
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3" />
+                Offline
+              </>
+            )}
+          </div>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-ink-200 hover:text-cream border border-ink-600 hover:border-ink-400 rounded-lg transition"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync balances'}
+          </button>
+        </div>
       </div>
 
       {/* Total balance card */}

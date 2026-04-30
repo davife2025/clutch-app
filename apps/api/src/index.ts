@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
+import { serve } from '@hono/node-server'
+import { createNodeWebSocket } from '@hono/node-ws'
 import { errorMiddleware } from './middleware/error.js'
 import { healthRoutes } from './routes/health.js'
 import { authRoutes } from './routes/auth.js'
@@ -14,8 +16,15 @@ import { connectRoutes } from './routes/connect.js'
 import { agentRoutes } from './routes/agent.js'
 import { payRoutes } from './routes/pay.js'
 import { x402Routes } from './routes/x402.js'
+import {
+  registerClient,
+  removeClient,
+  startRealtimeWorkers,
+  verifyWsToken,
+} from './realtime/manager.js'
 
 const app = new Hono()
+const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app })
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
@@ -38,6 +47,40 @@ app.route('/agent', agentRoutes)
 app.route('/pockets', payRoutes)
 app.route('/x402', x402Routes)
 
+// ─── WebSocket ─────────────────────────────────────────────────────────────────
+
+app.get(
+  '/ws',
+  upgradeWebSocket(async (c) => {
+    const token = c.req.query('token')
+    const userId = await verifyWsToken(token)
+    let clientId = ''
+
+    return {
+      onOpen(_evt, ws) {
+        if (!userId) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid or missing token' }))
+          ws.close(4001, 'Unauthorized')
+          return
+        }
+        clientId = `${userId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`
+        registerClient(clientId, userId, ws)
+      },
+      onClose() {
+        if (clientId) removeClient(clientId)
+      },
+      onError(err) {
+        console.error('[ws] error:', err)
+      },
+      // Echo client messages back as pong if they send "ping"
+      onMessage(evt, ws) {
+        const data = typeof evt.data === 'string' ? evt.data : ''
+        if (data === 'ping') ws.send(JSON.stringify({ type: 'ping', t: Date.now() }))
+      },
+    }
+  }),
+)
+
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 
 app.notFound((c) =>
@@ -47,6 +90,16 @@ app.notFound((c) =>
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 const port = Number(process.env.PORT ?? 3001)
-console.log(`🫙  Clutch API v0.1.0  →  http://localhost:${port}`)
 
-export default { port, fetch: app.fetch }
+const server = serve(
+  { fetch: app.fetch, port },
+  (info) => {
+    console.log(`🫙  Clutch API v0.1.0  →  http://localhost:${info.port}`)
+    console.log(`    WebSocket          →  ws://localhost:${info.port}/ws?token=<jwt>`)
+  },
+)
+
+injectWebSocket(server)
+startRealtimeWorkers()
+
+export default app

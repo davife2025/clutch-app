@@ -6,12 +6,24 @@ import { Plus, Wallet as WalletIcon, RefreshCw } from 'lucide-react-native'
 import * as Haptics from 'expo-haptics'
 import { theme } from '../../src/lib/theme'
 import { api } from '../../src/lib/api'
+import { useClutchSocket } from '../../src/hooks/useClutchSocket'
 import { formatUsd, truncateAddress, chainLabel } from '../../src/lib/format'
 
 export default function PocketScreen() {
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  const { status: wsStatus } = useClutchSocket({
+    onEvent: (event) => {
+      if (event.type === 'balance_update' && summary && event.pocketId === summary.pocketId) {
+        loadSummary()
+      }
+      if (event.type === 'tx_confirmed' && summary && event.pocketId === summary.pocketId) {
+        loadSummary()
+      }
+    },
+  })
 
   useEffect(() => {
     loadSummary()
@@ -75,29 +87,70 @@ export default function PocketScreen() {
         }
       >
         {/* Header */}
-        <View style={{ marginBottom: 24 }}>
-          <Text
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            marginBottom: 24,
+          }}
+        >
+          <View>
+            <Text
+              style={{
+                fontSize: 11,
+                letterSpacing: 2,
+                color: theme.colors.ink[300],
+                textTransform: 'uppercase',
+                marginBottom: 6,
+              }}
+            >
+              Pocket
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'Fraunces',
+                fontSize: 36,
+                fontWeight: '300',
+                color: theme.colors.cream,
+                letterSpacing: -1.2,
+              }}
+            >
+              {summary.name}
+            </Text>
+          </View>
+          <View
             style={{
-              fontSize: 11,
-              letterSpacing: 2,
-              color: theme.colors.ink[300],
-              textTransform: 'uppercase',
-              marginBottom: 6,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor:
+                wsStatus === 'open' ? 'rgba(92, 116, 86, 0.1)' : theme.colors.ink[800],
+              borderWidth: 1,
+              borderColor: wsStatus === 'open' ? 'rgba(92, 116, 86, 0.3)' : theme.colors.ink[600],
             }}
           >
-            Pocket
-          </Text>
-          <Text
-            style={{
-              fontFamily: 'Fraunces',
-              fontSize: 36,
-              fontWeight: '300',
-              color: theme.colors.cream,
-              letterSpacing: -1.2,
-            }}
-          >
-            {summary.name}
-          </Text>
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: wsStatus === 'open' ? theme.colors.moss : theme.colors.ink[400],
+              }}
+            />
+            <Text
+              style={{
+                fontSize: 10,
+                color: wsStatus === 'open' ? theme.colors.moss : theme.colors.ink[300],
+                letterSpacing: 0.5,
+              }}
+            >
+              {wsStatus === 'open' ? 'Live' : 'Offline'}
+            </Text>
+          </View>
         </View>
 
         {/* Total balance card */}
