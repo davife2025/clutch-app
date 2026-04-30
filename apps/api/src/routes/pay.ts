@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { agentService } from '../services/agent.service.js'
 import { humanToRaw } from '@clutch/core'
 import type { ChainId } from '@clutch/core'
+import { pushTxPending, pushTxConfirmed, pushBalanceUpdate } from '../realtime/manager.js'
 
 type Env = { Variables: { userId: string } }
 
@@ -85,6 +86,17 @@ payRoutes.post('/:id/pay/agent', async (c) => {
       memo,
       confirmedAt: result.status === 'confirmed' ? new Date() : undefined,
     })
+
+    // Push real-time events to all sockets owned by this user
+    if (result.txHash) {
+      if (result.status === 'confirmed') {
+        pushTxConfirmed(userId, { txHash: result.txHash, pocketId, status: 'confirmed' })
+      } else {
+        pushTxPending(userId, { txHash: result.txHash, pocketId })
+      }
+    }
+    // Re-sync balances in the background
+    pushBalanceUpdate(userId, pocketId).catch(() => {})
 
     return c.json({
       data: {

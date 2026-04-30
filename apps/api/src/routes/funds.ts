@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { depositSchema, withdrawSchema, importWalletSchema, validate } from '../lib/validation.js'
 import { solToLamports, lamportsToSol } from '@clutch/core'
 import { vaultService } from '@clutch/vault'
+import { pushBalanceUpdate } from '../realtime/manager.js'
 
 type Env = { Variables: { userId: string } }
 
@@ -51,6 +52,9 @@ fundsRoutes.post('/:id/deposit', async (c) => {
     txHash: parsed.data.txHash,
     confirmedAt: parsed.data.txHash ? new Date() : undefined,
   })
+
+  // Real-time push to all sockets owned by this user
+  pushBalanceUpdate(userId, pocketId).catch(() => {})
 
   return c.json({
     data: {
@@ -106,6 +110,8 @@ fundsRoutes.post('/:id/withdraw', async (c) => {
     token: 'SOL',
     chain: 'solana',
   })
+
+  pushBalanceUpdate(userId, pocketId).catch(() => {})
 
   return c.json({
     data: {
