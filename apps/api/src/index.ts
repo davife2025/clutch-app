@@ -13,6 +13,7 @@ import { webhookRoutes } from './routes/webhook.js'
 import { connectRoutes } from './routes/connect.js'
 import { agentRoutes } from './routes/agent.js'
 import { payRoutes } from './routes/pay.js'
+import { x402Routes } from './routes/x402.js'
 
 const app = new Hono()
 
@@ -35,8 +36,7 @@ app.route('/webhook', webhookRoutes)
 app.route('/pockets', connectRoutes)
 app.route('/agent', agentRoutes)
 app.route('/pockets', payRoutes)
-
-// Session 7: app.route('/x402', x402Routes)
+app.route('/x402', x402Routes)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 

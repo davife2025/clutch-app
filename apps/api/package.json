@@ -19,6 +19,7 @@
     "@clutch/connectors": "workspace:*",
     "@clutch/core": "workspace:*",
     "@clutch/vault": "workspace:*",
+    "@clutch/x402": "workspace:*",
     "@solana/web3.js": "^1.98.4",
     "bcryptjs": "^2.4.3",
     "bs58": "^6.0.0",

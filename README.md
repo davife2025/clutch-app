@@ -48,8 +48,8 @@ packages/
 | 4 | Encrypted vault · native SOL deposit/withdraw | ✅ |
 | 5 | WalletConnect — connect external wallets | ✅ |
 | 6 | AI agent with end-to-end payment execution | ✅ |
-| 7 | x402 payment protocol | 🔜 Next |
-| 8 | Web dashboard (8 pages, not 16) | |
+| 7 | x402 payment protocol | ✅ |
+| 8 | Web dashboard (8 pages, not 16) | 🔜 Next |
 | 9 | Mobile app — Expo | |
 | 10 | Chrome extension | |
 | 11 | WebSocket real-time updates | |
