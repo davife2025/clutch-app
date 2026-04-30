@@ -38,6 +38,9 @@ importers:
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -69,9 +72,6 @@ importers:
       '@types/jsonwebtoken':
         specifier: ^9.0.6
         version: 9.0.10
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.39
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
