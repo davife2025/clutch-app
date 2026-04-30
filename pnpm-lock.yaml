@@ -44,6 +44,9 @@ importers:
       '@types/jsonwebtoken':
         specifier: ^9.0.6
         version: 9.0.10
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -80,7 +83,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.0
-        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
+        version: 1.6.1(@types/node@20.19.39)(terser@5.46.2)
 
   apps/extension:
     dependencies:
@@ -8179,14 +8182,14 @@ snapshots:
     dependencies:
       '@jest/fake-timers': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       jest-mock: 29.7.0
 
   '@jest/fake-timers@29.7.0':
     dependencies:
       '@jest/types': 29.6.3
       '@sinonjs/fake-timers': 10.3.0
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       jest-message-util: 29.7.0
       jest-mock: 29.7.0
       jest-util: 29.7.0
@@ -8205,7 +8208,7 @@ snapshots:
     dependencies:
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       '@types/yargs': 15.0.20
       chalk: 4.1.2
 
@@ -8214,7 +8217,7 @@ snapshots:
       '@jest/schemas': 29.6.3
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -9114,7 +9117,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
 
   '@types/cookie@0.6.0': {}
 
@@ -9150,13 +9153,13 @@ snapshots:
   '@types/jsonwebtoken@9.0.10':
     dependencies:
       '@types/ms': 2.1.0
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
 
   '@types/ms@2.1.0': {}
 
   '@types/node-forge@1.3.14':
     dependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
 
   '@types/node@12.20.55': {}
 
@@ -9194,11 +9197,11 @@ snapshots:
 
   '@types/ws@7.4.7':
     dependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
 
   '@types/yargs-parser@21.0.3': {}
 
@@ -9990,7 +9993,7 @@ snapshots:
 
   chrome-launcher@0.15.2:
     dependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -11408,7 +11411,7 @@ snapshots:
       '@jest/environment': 29.7.0
       '@jest/fake-timers': 29.7.0
       '@jest/types': 29.6.3
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       jest-mock: 29.7.0
       jest-util: 29.7.0
 
@@ -11429,13 +11432,13 @@ snapshots:
   jest-mock@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       jest-util: 29.7.0
 
   jest-util@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       chalk: 4.1.2
       ci-info: 3.9.0
       graceful-fs: 4.2.11
@@ -11452,7 +11455,7 @@ snapshots:
 
   jest-worker@29.7.0:
     dependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
       jest-util: 29.7.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
@@ -13578,13 +13581,13 @@ snapshots:
       - utf-8-validate
       - zod
 
-  vite-node@1.6.1(@types/node@25.6.0)(terser@5.46.2):
+  vite-node@1.6.1(@types/node@20.19.39)(terser@5.46.2):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       pathe: 1.1.2
       picocolors: 1.1.1
-      vite: 5.4.21(@types/node@25.6.0)(terser@5.46.2)
+      vite: 5.4.21(@types/node@20.19.39)(terser@5.46.2)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -13596,6 +13599,16 @@ snapshots:
       - supports-color
       - terser
 
+  vite@5.4.21(@types/node@20.19.39)(terser@5.46.2):
+    dependencies:
+      esbuild: 0.21.5
+      postcss: 8.5.12
+      rollup: 4.60.2
+    optionalDependencies:
+      '@types/node': 20.19.39
+      fsevents: 2.3.3
+      terser: 5.46.2
+
   vite@5.4.21(@types/node@25.6.0)(terser@5.46.2):
     dependencies:
       esbuild: 0.21.5
@@ -13606,7 +13619,7 @@ snapshots:
       fsevents: 2.3.3
       terser: 5.46.2
 
-  vitest@1.6.1(@types/node@25.6.0)(terser@5.46.2):
+  vitest@1.6.1(@types/node@20.19.39)(terser@5.46.2):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -13625,11 +13638,11 @@ snapshots:
       strip-literal: 2.1.1
       tinybench: 2.9.0
       tinypool: 0.8.4
-      vite: 5.4.21(@types/node@25.6.0)(terser@5.46.2)
-      vite-node: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
+      vite: 5.4.21(@types/node@20.19.39)(terser@5.46.2)
+      vite-node: 1.6.1(@types/node@20.19.39)(terser@5.46.2)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 25.6.0
+      '@types/node': 20.19.39
     transitivePeerDependencies:
       - less
       - lightningcss
