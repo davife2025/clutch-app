@@ -32,6 +32,32 @@ export const addWalletSchema = z.object({
   label: z.string().max(50).optional(),
 })
 
+// ─── Funds ────────────────────────────────────────────────────────────────────
+
+export const depositSchema = z.object({
+  amount: z
+    .union([z.string(), z.number()])
+    .transform((v) => String(v))
+    .refine((v) => !isNaN(Number(v)) && Number(v) > 0, 'Amount must be a positive number'),
+  txHash: z.string().optional(),
+})
+
+export const withdrawSchema = z.object({
+  amount: z
+    .union([z.string(), z.number()])
+    .transform((v) => String(v))
+    .refine((v) => !isNaN(Number(v)) && Number(v) > 0, 'Amount must be a positive number'),
+  toAddress: z.string().min(20, 'Destination address required'),
+})
+
+// ─── Custodial wallet import ──────────────────────────────────────────────────
+
+export const importWalletSchema = z.object({
+  privateKey: z.string().min(32, 'Invalid private key'),
+  chain: z.enum(chainIdValues).default('solana'),
+  label: z.string().max(50).optional(),
+})
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Parse body with zod. Returns data or throws-style early return. */
