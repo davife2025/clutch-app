@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Clutch",
+  "description": "Your wallets. Always there. Detects HTTP 402 paywalls and pays through your Solana pocket.",
+  "version": "0.1.0",
+
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "Clutch — your pocket"
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "http://localhost/*",
+    "https://*/*"
+  ]
+}

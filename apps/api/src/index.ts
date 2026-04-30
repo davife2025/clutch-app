@@ -1,7 +1,19 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
-import { pingDb } from './db/client.js'
+import { errorMiddleware } from './middleware/error.js'
+import { healthRoutes } from './routes/health.js'
+import { authRoutes } from './routes/auth.js'
+import { pocketRoutes } from './routes/pocket.js'
+import { walletRoutes } from './routes/wallet.js'
+import { balanceRoutes } from './routes/balance.js'
+import { fundsRoutes } from './routes/funds.js'
+import { transactionRoutes } from './routes/transactions.js'
+import { webhookRoutes } from './routes/webhook.js'
+import { connectRoutes } from './routes/connect.js'
+import { agentRoutes } from './routes/agent.js'
+import { payRoutes } from './routes/pay.js'
+import { x402Routes } from './routes/x402.js'
 
 const app = new Hono()
 
@@ -9,30 +21,22 @@ const app = new Hono()
 
 app.use('*', logger())
 app.use('*', cors({ origin: process.env.CORS_ORIGIN ?? '*' }))
+app.use('*', errorMiddleware)
 
-// ─── Health ───────────────────────────────────────────────────────────────────
+// ─── Routes ───────────────────────────────────────────────────────────────────
 
-app.get('/health', async (c) => {
-  const dbOk = await pingDb()
-  return c.json({
-    status: dbOk ? 'ok' : 'degraded',
-    service: 'clutch-api',
-    version: '0.1.0',
-    db: dbOk ? 'connected' : 'unreachable',
-    timestamp: new Date().toISOString(),
-  })
-})
-
-// ─── Routes (added per session) ───────────────────────────────────────────────
-
-// Session 2: app.route('/auth', authRoutes)
-// Session 2: app.route('/pockets', pocketRoutes)
-// Session 2: app.route('/pockets', walletRoutes)
-// Session 3: app.route('/balances', balanceRoutes)
-// Session 4: app.route('/pockets', fundsRoutes)
-// Session 4: app.route('/transactions', transactionRoutes)
-// Session 6: app.route('/agent', agentRoutes)
-// Session 6: app.route('/pockets', payRoutes)
+app.route('/health', healthRoutes)
+app.route('/auth', authRoutes)
+app.route('/pockets', pocketRoutes)
+app.route('/pockets', walletRoutes)
+app.route('/balances', balanceRoutes)
+app.route('/pockets', fundsRoutes)
+app.route('/transactions', transactionRoutes)
+app.route('/webhook', webhookRoutes)
+app.route('/pockets', connectRoutes)
+app.route('/agent', agentRoutes)
+app.route('/pockets', payRoutes)
+app.route('/x402', x402Routes)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 
