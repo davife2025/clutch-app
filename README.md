@@ -43,8 +43,8 @@ packages/
 |---|---|---|
 | 1 | Repo scaffold · core types · DB schema (5 tables) | ✅ |
 | 2 | Auth · pocket CRUD · wallet CRUD | ✅ |
-| 3 | Connectors · balance sync · price service | 🔜 Next |
-| 4 | Encrypted vault · native SOL deposit/withdraw | |
+| 3 | Connectors · balance sync · price service | ✅ |
+| 4 | Encrypted vault · native SOL deposit/withdraw | 🔜 Next |
 | 5 | WalletConnect — connect external wallets | |
 | 6 | AI agent with end-to-end payment execution | |
 | 7 | x402 payment protocol | |
