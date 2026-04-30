@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from './schema.js'
+import * as relations from './relations.js'
 
 const connectionString = process.env.DATABASE_URL ?? 'postgresql://clutch:clutch@localhost:5432/clutch'
 
@@ -10,7 +11,7 @@ const client = postgres(connectionString, {
   connect_timeout: 10,
 })
 
-export const db = drizzle(client, { schema })
+export const db = drizzle(client, { schema: { ...schema, ...relations } })
 
 /** Health check — verifies the DB connection is alive. */
 export async function pingDb(): Promise<boolean> {

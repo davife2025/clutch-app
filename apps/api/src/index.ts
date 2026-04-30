@@ -1,7 +1,11 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
-import { pingDb } from './db/client.js'
+import { errorMiddleware } from './middleware/error.js'
+import { healthRoutes } from './routes/health.js'
+import { authRoutes } from './routes/auth.js'
+import { pocketRoutes } from './routes/pocket.js'
+import { walletRoutes } from './routes/wallet.js'
 
 const app = new Hono()
 
@@ -9,25 +13,15 @@ const app = new Hono()
 
 app.use('*', logger())
 app.use('*', cors({ origin: process.env.CORS_ORIGIN ?? '*' }))
+app.use('*', errorMiddleware)
 
-// ─── Health ───────────────────────────────────────────────────────────────────
+// ─── Routes ───────────────────────────────────────────────────────────────────
 
-app.get('/health', async (c) => {
-  const dbOk = await pingDb()
-  return c.json({
-    status: dbOk ? 'ok' : 'degraded',
-    service: 'clutch-api',
-    version: '0.1.0',
-    db: dbOk ? 'connected' : 'unreachable',
-    timestamp: new Date().toISOString(),
-  })
-})
+app.route('/health', healthRoutes)
+app.route('/auth', authRoutes)
+app.route('/pockets', pocketRoutes)
+app.route('/pockets', walletRoutes)
 
-// ─── Routes (added per session) ───────────────────────────────────────────────
-
-// Session 2: app.route('/auth', authRoutes)
-// Session 2: app.route('/pockets', pocketRoutes)
-// Session 2: app.route('/pockets', walletRoutes)
 // Session 3: app.route('/balances', balanceRoutes)
 // Session 4: app.route('/pockets', fundsRoutes)
 // Session 4: app.route('/transactions', transactionRoutes)
