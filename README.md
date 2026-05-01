@@ -65,7 +65,7 @@ packages/
 | 11 | WebSocket real-time updates | ✅ |
 | 12 | Solana swap routing (Jupiter) for agent | ✅ |
 | 13 | Testing + CI/CD | ✅ |
-| 14 | Production deployment | 🔜 Next |
+| 14 | Production deployment | ✅ |
 
 ---
 
@@ -78,6 +78,20 @@ Five tables. That's it.
 - **wallets** — addresses connected to a pocket (manual, WalletConnect, or custodial)
 - **wallet_balances** — cached token balances per wallet
 - **transactions** — deposit, withdraw, payment, transfer history
+
+---
+
+## Deployment
+
+| Component | Where |
+|---|---|
+| Database | Supabase (PostgreSQL) |
+| API | Render (Node web service) |
+| Web | Vercel (Next.js) |
+| Mobile | Expo EAS |
+| Extension | Chrome Web Store |
+
+See [`docs/deployment.md`](./docs/deployment.md) for the step-by-step. Pre-launch checklist in [`docs/launch-checklist.md`](./docs/launch-checklist.md).
 
 ---
 

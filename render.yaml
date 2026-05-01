@@ -1,0 +1,87 @@
+# Render Blueprint for Clutch API
+# https://render.com/docs/blueprint-spec
+#
+# Deploy:
+#   1. Push this repo to GitHub
+#   2. Render Dashboard → New → Blueprint → connect repo → pick this file
+#   3. Set the secret env vars in the Render UI (DATABASE_URL, JWT_SECRET, etc.)
+#
+# What this provisions:
+#   - One web service (the Hono API) on Render's shared infrastructure
+#   - Auto-deploys on push to main
+#   - Health check pointed at /health for zero-downtime restarts
+
+services:
+  - type: web
+    name: clutch-api
+    runtime: node
+    region: oregon
+    plan: starter
+
+    # Build/run from a monorepo subdir using pnpm.
+    # rootDir is the project root so workspace packages resolve.
+    rootDir: .
+    buildCommand: corepack enable && corepack prepare pnpm@9.1.0 --activate && pnpm install --frozen-lockfile --ignore-scripts
+    startCommand: pnpm --filter @clutch/api start
+
+    healthCheckPath: /health
+    autoDeploy: true
+
+    # Environment variables — set the actual values in the Render UI.
+    # The `sync: false` lines mean Render won't auto-sync them from this file
+    # (so you keep secrets out of git).
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+
+      # Supabase Postgres — use the TRANSACTION POOLER (port 6543).
+      # Get it from: Supabase Dashboard → Project Settings → Database → Connection string
+      - key: DATABASE_URL
+        sync: false
+      # Direct connection for migrations (port 5432) — only used by drizzle-kit.
+      - key: DATABASE_URL_DIRECT
+        sync: false
+
+      # Auth
+      - key: JWT_SECRET
+        generateValue: true # Render generates and persists a secure value
+
+      # Vault encryption key — at least 32 chars
+      - key: VAULT_MASTER_KEY
+        generateValue: true
+
+      # CORS — set to your Vercel deployment URL
+      - key: CORS_ORIGIN
+        sync: false
+
+      # Solana RPC — recommend Helius or QuickNode for mainnet reliability
+      - key: SOLANA_RPC_URL
+        value: https://api.mainnet-beta.solana.com
+
+      # EVM RPCs (read-only — for the external balance view)
+      - key: ETHEREUM_RPC_URL
+        value: https://eth.llamarpc.com
+      - key: BASE_RPC_URL
+        value: https://mainnet.base.org
+      - key: POLYGON_RPC_URL
+        value: https://polygon-rpc.com
+      - key: ARBITRUM_RPC_URL
+        value: https://arb1.arbitrum.io/rpc
+      - key: OPTIMISM_RPC_URL
+        value: https://mainnet.optimism.io
+
+      # Anthropic — for the AI agent
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # WalletConnect — get from https://cloud.walletconnect.com
+      - key: WALLETCONNECT_PROJECT_ID
+        sync: false
+
+      # CoinGecko — optional API key for higher rate limits
+      - key: COINGECKO_API_KEY
+        sync: false
