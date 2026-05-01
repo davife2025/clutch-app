@@ -1,3 +1,4 @@
+// drizzle.config.ts
 import { defineConfig } from 'drizzle-kit'
 
 export default defineConfig({
@@ -5,11 +6,8 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    // Use the DIRECT connection for migrations — Supabase pooler doesn't support DDL
-    url:
-      process.env.DATABASE_URL_DIRECT ??
-      process.env.DATABASE_URL ??
-      'postgresql://postgres:postgres@localhost:5432/postgres',
+    url: 'postgresql://postgres:T8qJfK2z$m)8_Kr@db.tyimzyylyawbdhmmlubu.supabase.co:5432/postgres',
+    ssl: 'require',
   },
   verbose: true,
   strict: true,

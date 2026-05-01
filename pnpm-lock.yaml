@@ -38,9 +38,6 @@ importers:
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.39
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -59,6 +56,9 @@ importers:
       postgres:
         specifier: ^3.4.4
         version: 3.4.9
+      tsx:
+        specifier: ^4.11.0
+        version: 4.21.0
       viem:
         specifier: ^2.48.4
         version: 2.48.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
@@ -72,18 +72,18 @@ importers:
       '@types/jsonwebtoken':
         specifier: ^9.0.6
         version: 9.0.10
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
-      tsx:
-        specifier: ^4.11.0
-        version: 4.21.0
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
       vitest:
         specifier: ^1.6.0
-        version: 1.6.1(@types/node@20.19.39)(terser@5.46.2)
+        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
 
   apps/extension:
     dependencies:
@@ -241,6 +241,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
 
   packages/connectors:
     dependencies:
@@ -275,12 +278,18 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
 
   packages/core:
     devDependencies:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
 
   packages/vault:
     dependencies:
@@ -291,6 +300,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
 
   packages/x402:
     dependencies:
@@ -301,6 +313,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
 
 packages:
 
@@ -3383,6 +3398,10 @@ packages:
 
   dotenv@16.4.7:
     resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
+    engines: {node: '>=12'}
+
+  dotenv@17.4.2:
+    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
 
   drizzle-kit@0.31.10:
@@ -10319,6 +10338,8 @@ snapshots:
 
   dotenv@16.4.7: {}
 
+  dotenv@17.4.2: {}
+
   drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -13581,13 +13602,13 @@ snapshots:
       - utf-8-validate
       - zod
 
-  vite-node@1.6.1(@types/node@20.19.39)(terser@5.46.2):
+  vite-node@1.6.1(@types/node@25.6.0)(terser@5.46.2):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       pathe: 1.1.2
       picocolors: 1.1.1
-      vite: 5.4.21(@types/node@20.19.39)(terser@5.46.2)
+      vite: 5.4.21(@types/node@25.6.0)(terser@5.46.2)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -13599,16 +13620,6 @@ snapshots:
       - supports-color
       - terser
 
-  vite@5.4.21(@types/node@20.19.39)(terser@5.46.2):
-    dependencies:
-      esbuild: 0.21.5
-      postcss: 8.5.12
-      rollup: 4.60.2
-    optionalDependencies:
-      '@types/node': 20.19.39
-      fsevents: 2.3.3
-      terser: 5.46.2
-
   vite@5.4.21(@types/node@25.6.0)(terser@5.46.2):
     dependencies:
       esbuild: 0.21.5
@@ -13619,7 +13630,7 @@ snapshots:
       fsevents: 2.3.3
       terser: 5.46.2
 
-  vitest@1.6.1(@types/node@20.19.39)(terser@5.46.2):
+  vitest@1.6.1(@types/node@25.6.0)(terser@5.46.2):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -13638,11 +13649,11 @@ snapshots:
       strip-literal: 2.1.1
       tinybench: 2.9.0
       tinypool: 0.8.4
-      vite: 5.4.21(@types/node@20.19.39)(terser@5.46.2)
-      vite-node: 1.6.1(@types/node@20.19.39)(terser@5.46.2)
+      vite: 5.4.21(@types/node@25.6.0)(terser@5.46.2)
+      vite-node: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 20.19.39
+      '@types/node': 25.6.0
     transitivePeerDependencies:
       - less
       - lightningcss
