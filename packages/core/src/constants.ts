@@ -63,7 +63,8 @@ export const NATIVE_DECIMALS = 9
 export const NATIVE_TOKEN = 'SOL'
 export const LAMPORTS_PER_SOL = 1_000_000_000n
 
-export const MAX_WALLETS_PER_POCKET = 20
+export const MAX_WALLETS_PER_POCKET = 10
+export const MAX_POCKETS_PER_USER = 4
 
 /** Well-known SPL token decimals. */
 export const SPL_DECIMALS: Record<string, number> = {

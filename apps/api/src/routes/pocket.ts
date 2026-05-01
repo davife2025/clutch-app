@@ -4,7 +4,7 @@ import { pockets } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
 import { authMiddleware } from '../middleware/auth.js'
 import { createPocketSchema, validate } from '../lib/validation.js'
-import { lamportsToSol } from '@clutch/core'
+import { lamportsToSol, MAX_POCKETS_PER_USER } from '@clutch/core'
 
 type Env = { Variables: { userId: string } }
 
@@ -68,6 +68,22 @@ pocketRoutes.post('/', async (c) => {
   const parsed = validate(body, createPocketSchema)
   if (!parsed.ok) {
     return c.json({ error: { code: 'VALIDATION', message: parsed.error } }, 400)
+  }
+
+  // Enforce per-user pocket limit
+  const existing = await db.query.pockets.findMany({
+    where: eq(pockets.ownerId, userId),
+  })
+  if (existing.length >= MAX_POCKETS_PER_USER) {
+    return c.json(
+      {
+        error: {
+          code: 'LIMIT_REACHED',
+          message: `Max ${MAX_POCKETS_PER_USER} pockets per user`,
+        },
+      },
+      400,
+    )
   }
 
   const [pocket] = await db
