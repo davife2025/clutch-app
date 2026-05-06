@@ -55,6 +55,21 @@ export interface SigningConnector extends ReadOnlyConnector {
   signMessage(message: string, privateKey: string): Promise<string>
   /** Check if the recipient needs an ATA created for a given SPL token. */
   needsAtaCreation(toAddress: string, tokenSymbol: string): Promise<boolean>
+  /**
+   * Build an unsigned versioned transaction. Used by the WC signing flow —
+   * the API builds the tx, sends it to the user's wallet for signing, then
+   * the result comes back through `sendSignedTransaction`.
+   */
+  buildTransferTransaction(
+    fromPubkey: any,
+    request: TxRequest,
+  ): Promise<{ tx: any; blockhash: string; lastValidBlockHeight: number }>
+  /** Submit a pre-signed transaction (used in the WC flow). */
+  sendSignedTransaction(
+    signedTx: any,
+    blockhash: string,
+    lastValidBlockHeight: number,
+  ): Promise<TxReceipt>
 }
 
 // Backwards compat — old code referred to WalletConnector. Alias to ReadOnlyConnector.

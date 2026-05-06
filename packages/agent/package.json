@@ -14,7 +14,8 @@
     "@anthropic-ai/sdk": "^0.91.1",
     "@clutch/connectors": "workspace:*",
     "@clutch/core": "workspace:*",
-    "@clutch/vault": "workspace:*"
+    "@clutch/vault": "workspace:*",
+    "@solana/web3.js": "^1.98.4"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

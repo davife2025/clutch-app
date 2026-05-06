@@ -33,7 +33,7 @@ Before flipping Clutch live to real users. Walk through this end-to-end. Every b
 - [ ] All endpoint smoke tests pass against production:
   - register → login → create pocket → add wallet → sync balance → get summary → pay via agent → see transaction in history.
 - [ ] WebSocket connects: `wss://clutch-api.onrender.com/ws?token=<jwt>` returns the `connected` event.
-- [ ] Rate limiting: at minimum, the `/auth/login` and `/auth/register` endpoints have brute-force protection at the platform level (Render or via a middleware — currently there's none, **add this before public launch**).
+- [ ] Rate limiting: token-bucket middleware applied to `/auth/login` (5/min), `/auth/register` (3/5min), `/pockets/:id/pay/agent` (10/min), `/agent/*` (30/min), and `/webhook/*` (60/min). For multi-instance deploys, swap to a Redis-backed bucket.
 - [ ] Error responses don't leak stack traces. The error middleware handles this for caught errors; spot-check by triggering a 500.
 
 ## Web
@@ -83,9 +83,11 @@ These are safe to ship without, but flag them as known gaps:
 - No 2FA on accounts (just email + password)
 - No password reset flow
 - No account deletion endpoint
-- No rate limiting middleware in the API itself (rely on Render/Vercel platform limits)
-- No on-chain transaction verification on the webhook endpoint (any caller with the txHash can mark it confirmed — fine for testing, not for production at scale)
 - No tests against a real Supabase instance — only unit tests
 - No E2E browser tests
+- WalletConnect Solana signing tested only in unit form — needs real Phantom Mobile testing before production
+- Wallet Standard not yet wired into the web UI (still uses manual address paste)
+- No multi-pocket UI (backend supports 4 pockets/user, web shows only the first)
+- In-memory rate limit buckets — works on a single Render instance, requires Redis for horizontal scaling
 
 Address before scaling beyond friends-and-family.

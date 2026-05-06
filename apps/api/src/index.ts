@@ -4,6 +4,7 @@ import { logger } from 'hono/logger'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { errorMiddleware } from './middleware/error.js'
+import { rateLimit } from './middleware/rate-limit.js'
 import { healthRoutes } from './routes/health.js'
 import { authRoutes } from './routes/auth.js'
 import { pocketRoutes } from './routes/pocket.js'
@@ -31,6 +32,33 @@ const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app })
 app.use('*', logger())
 app.use('*', cors({ origin: process.env.CORS_ORIGIN ?? '*' }))
 app.use('*', errorMiddleware)
+
+// ─── Rate limits (applied per-route for explicit policy) ──────────────────────
+//
+// Auth is the most attack-prone — strict limits.
+// Payment endpoints get a reasonable limit to prevent runaway agent loops.
+// General reads are rate-limited globally with a high ceiling.
+
+app.use(
+  '/auth/login',
+  rateLimit({ max: 5, windowMs: 60_000, key: 'auth-login' }),
+)
+app.use(
+  '/auth/register',
+  rateLimit({ max: 3, windowMs: 5 * 60_000, key: 'auth-register' }),
+)
+app.use(
+  '/pockets/:id/pay/agent',
+  rateLimit({ max: 10, windowMs: 60_000, key: 'pay-agent' }),
+)
+app.use(
+  '/agent/*',
+  rateLimit({ max: 30, windowMs: 60_000, key: 'agent' }),
+)
+app.use(
+  '/webhook/*',
+  rateLimit({ max: 60, windowMs: 60_000, key: 'webhook' }),
+)
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
