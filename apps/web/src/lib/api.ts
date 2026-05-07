@@ -118,6 +118,41 @@ class ApiClient {
     )
   }
 
+  /** Get spending policy for a pocket */
+  async getPolicy(pocketId: string) {
+    return this.request<{
+      policy: {
+        enabled: boolean
+        maxPerTxUsd: number | null
+        maxPerDayUsd: number | null
+        allowedRecipients: string[]
+        blockedRecipients: string[]
+        allowedTokens: string[]
+        blockedTokens: string[]
+      }
+      spentTodayUsd: number
+    }>(`/pockets/${pocketId}/policy`)
+  }
+
+  /** Update spending policy. Partial update — only sent fields change. */
+  async updatePolicy(
+    pocketId: string,
+    update: {
+      enabled?: boolean
+      maxPerTxUsd?: number | null
+      maxPerDayUsd?: number | null
+      allowedRecipients?: string[]
+      blockedRecipients?: string[]
+      allowedTokens?: string[]
+      blockedTokens?: string[]
+    },
+  ) {
+    return this.request<{ policy: any }>(`/pockets/${pocketId}/policy`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    })
+  }
+
   // ── Pockets ─────────────────────────────────────────────────────────────────
   async listPockets() {
     return this.request<{ pockets: any[] }>('/pockets')

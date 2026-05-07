@@ -4,6 +4,8 @@ import { pockets, transactions } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
 import { authMiddleware } from '../middleware/auth.js'
 import { agentService } from '../services/agent.service.js'
+import { policyService } from '../services/policy.service.js'
+import { priceService } from '../services/price.service.js'
 import { humanToRaw } from '@clutch/core'
 import type { ChainId } from '@clutch/core'
 import { pushTxPending, pushTxConfirmed, pushBalanceUpdate } from '../realtime/manager.js'
@@ -18,10 +20,10 @@ payRoutes.use('*', authMiddleware)
  *
  * One-shot AI-routed payment:
  *   "Send 10 USDC to alice.sol" →
- *     agent checks all wallets →
- *     picks cheapest route →
- *     executes →
- *     returns tx hash
+ *     check spending policy →
+ *     agent picks cheapest Solana route →
+ *     execute →
+ *     return tx hash
  *
  * This is the signature Clutch endpoint.
  */
@@ -58,6 +60,41 @@ payRoutes.post('/:id/pay/agent', async (c) => {
         },
       },
       400,
+    )
+  }
+
+  // ─── Policy enforcement ────────────────────────────────────────────────────
+  // Check the spending policy BEFORE the agent gets involved. This is the
+  // critical safety guarantee — even a hallucinating agent can't bypass it.
+
+  const tokenUpper = String(token).toUpperCase()
+  const STABLES = new Set(['USDC', 'USDT', 'DAI'])
+  let amountUsd: number
+
+  if (STABLES.has(tokenUpper)) {
+    amountUsd = Number(amount)
+  } else {
+    const price = await priceService.getUsdPrice(tokenUpper)
+    amountUsd = price ? Number(amount) * price : 0
+  }
+
+  const decision = await policyService.evaluatePayment({
+    pocketId,
+    toAddress: String(to),
+    token: tokenUpper,
+    amountUsd,
+  })
+
+  if (!decision.allowed) {
+    return c.json(
+      {
+        error: {
+          code: decision.code ?? 'POLICY_DENIED',
+          message: decision.reason ?? 'Policy denied this payment',
+          context: decision.context,
+        },
+      },
+      403,
     )
   }
 

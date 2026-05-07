@@ -17,6 +17,7 @@ import { connectRoutes } from './routes/connect.js'
 import { agentRoutes } from './routes/agent.js'
 import { payRoutes } from './routes/pay.js'
 import { x402Routes } from './routes/x402.js'
+import { policyRoutes } from './routes/policy.js'
 import {
   registerClient,
   removeClient,
@@ -81,6 +82,7 @@ app.route('/webhook', webhookRoutes)
 app.route('/pockets', connectRoutes)
 app.route('/agent', agentRoutes)
 app.route('/pockets', payRoutes)
+app.route('/pockets', policyRoutes)
 app.route('/x402', x402Routes)
 
 // ─── WebSocket ─────────────────────────────────────────────────────────────────

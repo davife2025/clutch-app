@@ -68,6 +68,7 @@ packages/
 | 14 | Production deployment | ✅ |
 | 15 | Webhook verification · rate limiting · WalletConnect Solana signing | ✅ |
 | 16 | Anonymous login · upgrade flow · auth troubleshooting | ✅ |
+| 17 | Spending policy engine — server-side enforcement, audit-grade guardrails | ✅ |
 
 ---
 

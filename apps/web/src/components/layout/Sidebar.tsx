@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, Wallet, Sparkles, Activity, Settings, LogOut } from 'lucide-react'
+import { Home, Wallet, Sparkles, Activity, Shield, Settings, LogOut } from 'lucide-react'
 import { api } from '@/lib/api'
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet },
   { href: '/dashboard/agent', label: 'Agent', icon: Sparkles },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity },
+  { href: '/dashboard/policy', label: 'Policy', icon: Shield },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 

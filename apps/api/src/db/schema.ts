@@ -152,6 +152,40 @@ export const transactions = pgTable(
   ],
 )
 
+// ─── Spending Policies ────────────────────────────────────────────────────────
+//
+// One policy per pocket. Defines guardrails the agent must respect when
+// executing payments or swaps. Enforced server-side in the agent executor
+// before any on-chain action.
+
+export const pocketPolicies = pgTable(
+  'pocket_policies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    pocketId: uuid('pocket_id')
+      .notNull()
+      .unique()
+      .references(() => pockets.id, { onDelete: 'cascade' }),
+    /** Policy is enforced when true. Default off for new pockets. */
+    enabled: boolean('enabled').notNull().default(false),
+    /** Max single transaction size in USD. Null = no limit. */
+    maxPerTxUsd: text('max_per_tx_usd'),
+    /** Max cumulative spend per day (UTC) in USD. Null = no limit. */
+    maxPerDayUsd: text('max_per_day_usd'),
+    /** Comma-separated allowlist of recipient addresses. Null/empty = any address. */
+    allowedRecipients: text('allowed_recipients'),
+    /** Comma-separated blocklist of recipient addresses. Always rejected. */
+    blockedRecipients: text('blocked_recipients'),
+    /** Comma-separated allowlist of token symbols (USDC, SOL, ...). Null/empty = any token. */
+    allowedTokens: text('allowed_tokens'),
+    /** Comma-separated blocklist of token symbols. Always rejected. */
+    blockedTokens: text('blocked_tokens'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('policies_pocket_idx').on(t.pocketId)],
+)
+
 // ─── Type exports ─────────────────────────────────────────────────────────────
 
 export type UserRow = typeof users.$inferSelect
