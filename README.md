@@ -66,6 +66,8 @@ packages/
 | 12 | Solana swap routing (Jupiter) for agent | ✅ |
 | 13 | Testing + CI/CD | ✅ |
 | 14 | Production deployment | ✅ |
+| 15 | Webhook verification · rate limiting · WalletConnect Solana signing | ✅ |
+| 16 | Anonymous login · upgrade flow · auth troubleshooting | ✅ |
 
 ---
 

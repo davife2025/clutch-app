@@ -40,11 +40,17 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    email: text('email').notNull(),
-    passwordHash: text('password_hash').notNull(),
+    /** Null for anonymous accounts. Becomes set on upgrade. */
+    email: text('email'),
+    /** Null for anonymous accounts. Becomes set on upgrade. */
+    passwordHash: text('password_hash'),
+    /** True for accounts created without email/password. */
+    isAnonymous: boolean('is_anonymous').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
+  // Unique index on email — Postgres treats NULLs as distinct, so multiple
+  // anonymous users (all with email=NULL) coexist fine.
   (t) => [uniqueIndex('users_email_idx').on(t.email)],
 )
 

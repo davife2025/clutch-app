@@ -6,6 +6,7 @@ import { ArrowRight, Wallet, Sparkles, Plus, RefreshCw, Wifi, WifiOff } from 'lu
 import { api } from '@/lib/api'
 import { formatUsd, truncateAddress, chainLabel } from '@/lib/format'
 import { useClutchSocket } from '@/hooks/useClutchSocket'
+import { UpgradeBanner } from '@/components/layout/UpgradeBanner'
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<any>(null)
@@ -82,6 +83,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-10 animate-fade-up">
+      <UpgradeBanner />
+
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>

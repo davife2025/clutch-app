@@ -58,23 +58,32 @@ export default function LandingPage() {
           </p>
 
           <div
-            className="flex items-center gap-4 mb-20 animate-fade-up"
+            className="flex flex-wrap items-center gap-4 mb-6 animate-fade-up"
             style={{ animationDelay: '0.2s' }}
           >
             <Link
-              href="/auth/register"
+              href="/auth/try"
               className="group px-6 py-3 bg-gold hover:bg-gold-300 text-ink-900 rounded-lg font-medium flex items-center gap-2 transition"
             >
-              Open a pocket
+              Try without signing up
               <ArrowUpRight className="w-4 h-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Link>
             <Link
-              href="/auth/login"
+              href="/auth/register"
               className="px-6 py-3 border border-ink-500 hover:border-ink-300 text-ink-100 rounded-lg font-medium transition"
+            >
+              Open a pocket
+            </Link>
+            <Link
+              href="/auth/login"
+              className="px-6 py-3 text-ink-200 hover:text-cream rounded-lg font-medium transition"
             >
               Sign in
             </Link>
           </div>
+          <p className="text-xs text-ink-400 mb-20 animate-fade-up" style={{ animationDelay: '0.25s' }}>
+            No email, no credit card — try it now and add an account later if you keep using it.
+          </p>
         </div>
 
         {/* Three-column feature grid */}

@@ -1,6 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 const TOKEN_KEY = 'clutch_token'
 const POCKET_KEY = 'clutch_pocket_id'
+const ANON_KEY = 'clutch_is_anonymous'
 
 export interface ApiError {
   code: string
@@ -28,6 +29,7 @@ class ApiClient {
     if (typeof window !== 'undefined') {
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(POCKET_KEY)
+      localStorage.removeItem(ANON_KEY)
     }
   }
 
@@ -40,6 +42,18 @@ class ApiClient {
   getPocketId(): string | null {
     if (typeof window === 'undefined') return null
     return localStorage.getItem(POCKET_KEY)
+  }
+
+  setAnonymous(isAnonymous: boolean) {
+    if (typeof window !== 'undefined') {
+      if (isAnonymous) localStorage.setItem(ANON_KEY, '1')
+      else localStorage.removeItem(ANON_KEY)
+    }
+  }
+
+  isAnonymous(): boolean {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(ANON_KEY) === '1'
   }
 
   isAuthenticated(): boolean {
@@ -67,17 +81,41 @@ class ApiClient {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   async register(email: string, password: string) {
-    return this.request<{ token: string; userId: string; pocketId: string }>('/auth/register', {
+    return this.request<{ token: string; userId: string; pocketId: string; isAnonymous: boolean }>(
+      '/auth/register',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      },
+    )
+  }
+
+  async login(email: string, password: string) {
+    return this.request<{ token: string; userId: string; isAnonymous: boolean }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
   }
 
-  async login(email: string, password: string) {
-    return this.request<{ token: string; userId: string }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    })
+  /** Create an anonymous account — no email required, full access. */
+  async anonymous() {
+    return this.request<{
+      token: string
+      userId: string
+      pocketId: string
+      isAnonymous: boolean
+    }>('/auth/anonymous', { method: 'POST' })
+  }
+
+  /** Convert an anonymous account to a permanent one. Preserves all data. */
+  async upgrade(email: string, password: string) {
+    return this.request<{ token: string; userId: string; isAnonymous: boolean }>(
+      '/auth/upgrade',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      },
+    )
   }
 
   // ── Pockets ─────────────────────────────────────────────────────────────────

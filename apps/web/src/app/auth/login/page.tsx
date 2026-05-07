@@ -27,6 +27,7 @@ export default function LoginPage() {
     }
 
     api.setToken(data.token)
+    api.setAnonymous(false)
     // Fetch first pocket
     const { data: pocketData } = await api.listPockets()
     if (pocketData?.pockets[0]) {

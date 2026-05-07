@@ -48,6 +48,14 @@ app.use(
   rateLimit({ max: 3, windowMs: 5 * 60_000, key: 'auth-register' }),
 )
 app.use(
+  '/auth/anonymous',
+  rateLimit({ max: 5, windowMs: 5 * 60_000, key: 'auth-anonymous' }),
+)
+app.use(
+  '/auth/upgrade',
+  rateLimit({ max: 3, windowMs: 60_000, key: 'auth-upgrade' }),
+)
+app.use(
   '/pockets/:id/pay/agent',
   rateLimit({ max: 10, windowMs: 60_000, key: 'pay-agent' }),
 )
