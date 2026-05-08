@@ -86,6 +86,26 @@ payRoutes.post('/:id/pay/agent', async (c) => {
   })
 
   if (!decision.allowed) {
+    // Record the denial so the user has an audit trail in /activity.
+    // Even denied attempts are valuable signal — "my agent tried this 3 times,
+    // my policy caught it" is exactly the visibility we want to give users.
+    try {
+      const decimals = STABLES.has(tokenUpper) ? 6 : tokenUpper === 'SOL' ? 9 : 6
+      await db.insert(transactions).values({
+        pocketId,
+        type: 'payment',
+        status: 'policy_denied',
+        fromAddress: pocket.id, // we didn't pick a wallet — use pocket id as placeholder
+        toAddress: String(to),
+        amount: humanToRaw(String(amount), decimals),
+        token: String(token),
+        chain: 'solana',
+        memo: decision.reason ?? 'Policy denied',
+      })
+    } catch {
+      // Audit log failure shouldn't block the response
+    }
+
     return c.json(
       {
         error: {

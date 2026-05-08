@@ -43,18 +43,18 @@ export default function LandingPage() {
           </div>
 
           <h1 className="font-display text-7xl md:text-8xl font-light tracking-tightest leading-[0.95] mb-8 animate-fade-up">
-            Your wallets.
+            Wallets your AI
             <br />
-            <span className="italic font-normal text-gold">Always there.</span>
+            <span className="italic font-normal text-gold">won't drain.</span>
           </h1>
 
           <p
             className="text-xl text-ink-200 max-w-2xl leading-relaxed mb-12 animate-fade-up"
             style={{ animationDelay: '0.1s' }}
           >
-            Clutch is the layer above your Solana wallets. Connect Phantom, Backpack, Solflare —
-            see one balance, pay through any of them, let an AI agent route micropayments through
-            x402. The anti-wallet.
+            AI agents on Solana run with full custody — one bad decision and the wallet drains.
+            Clutch is the payment layer between agents and the chain: spending limits, audit logs,
+            x402 handling, and one-click revocation that any agent can plug into in five minutes.
           </p>
 
           <div
@@ -89,19 +89,19 @@ export default function LandingPage() {
         {/* Three-column feature grid */}
         <div className="grid md:grid-cols-3 gap-px bg-ink-700/60 border border-ink-700/60 rounded-2xl overflow-hidden">
           <Feature
-            icon={<Wallet className="w-5 h-5" />}
-            title="Hold every wallet"
-            body="Phantom, Backpack, Ledger, custodial keys. All in one pocket. One unified balance, real-time."
+            icon={<Shield className="w-5 h-5" />}
+            title="Spending guardrails"
+            body="Per-transaction caps, daily limits, recipient allowlists. Enforced server-side before any chain interaction — even a hallucinating agent can't bypass them."
           />
           <Feature
             icon={<Sparkles className="w-5 h-5" />}
-            title="AI routes payments"
-            body="Tell the agent where to send money. It picks the best wallet, signs through the vault or WalletConnect, broadcasts on Solana."
+            title="Agent-native routing"
+            body="The AI picks the optimal wallet, swaps via Jupiter when needed, signs through the vault or WalletConnect, broadcasts on Solana — all in one call."
           />
           <Feature
-            icon={<Shield className="w-5 h-5" />}
-            title="x402 micropayments"
-            body="Drop our fetch wrapper into any app. HTTP 402 responses get paid automatically — programmatic access without friction."
+            icon={<Wallet className="w-5 h-5" />}
+            title="x402 payment handling"
+            body="Drop the fetch wrapper into any agent. HTTP 402 paywalls get paid automatically within policy — programmatic access without subscriptions."
           />
         </div>
       </section>

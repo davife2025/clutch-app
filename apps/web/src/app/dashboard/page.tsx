@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { formatUsd, truncateAddress, chainLabel } from '@/lib/format'
 import { useClutchSocket } from '@/hooks/useClutchSocket'
 import { UpgradeBanner } from '@/components/layout/UpgradeBanner'
+import { PolicyStatusCard } from '@/components/pocket/PolicyStatusCard'
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<any>(null)
@@ -144,6 +145,9 @@ export default function DashboardPage() {
           <Stat label="Native SOL" value={`${parseFloat(summary.nativeBalanceSol).toFixed(4)}`} />
         </div>
       </div>
+
+      {/* Policy status — surfaces guardrails on the dashboard */}
+      <PolicyStatusCard />
 
       {/* Empty state */}
       {hasNoWallets && (

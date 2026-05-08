@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { LogOut } from 'lucide-react'
 import { api } from '@/lib/api'
 
@@ -24,22 +25,37 @@ export default function SettingsPage() {
       <div className="space-y-6">
         <Section title="Pocket">
           <p className="text-ink-200 text-sm leading-relaxed mb-4">
-            Your pocket holds your wallets and a native SOL balance. Each user starts with one
-            default pocket — multiple pockets coming soon.
+            Your pocket holds up to 10 Solana wallets and a native SOL balance. You can have up
+            to 4 pockets per account.
           </p>
+        </Section>
+
+        <Section title="Spending guardrails">
+          <p className="text-ink-200 text-sm leading-relaxed mb-2">
+            Configure per-transaction limits, daily caps, recipient allowlists, and token rules
+            on the Policy page. The policy engine evaluates every payment server-side before any
+            chain interaction — guaranteeing no transaction violates your rules.
+          </p>
+          <Link
+            href="/dashboard/policy"
+            className="inline-flex items-center gap-1 text-xs text-gold hover:underline mt-2"
+          >
+            Open policy settings →
+          </Link>
         </Section>
 
         <Section title="Security">
           <p className="text-ink-200 text-sm leading-relaxed mb-4">
-            Custodial wallet keys are encrypted with AES-256-GCM in the vault. Your master key is
-            derived from your password via scrypt. WalletConnect sessions are stored securely.
+            Custodial wallet keys are encrypted with AES-256-GCM in the vault using a server-held
+            master key. WalletConnect sessions are stored securely. Auth tokens use HS256 JWT.
+            Rate limits protect login, registration, and payment endpoints.
           </p>
         </Section>
 
         <Section title="About Clutch">
           <p className="text-ink-200 text-sm leading-relaxed mb-2">
-            Clutch is a Solana-native wallet pocket. EVM wallets are supported as read-only
-            external balances for portfolio completeness.
+            Clutch is the payment layer between AI agents and Solana. Spending policies, audit
+            logs, x402 handling, and one-click revocation that any Solana agent can plug into.
           </p>
           <p className="text-xs text-ink-400 font-mono mt-4">v0.1.0 · Built on Solana</p>
         </Section>

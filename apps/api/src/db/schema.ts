@@ -16,13 +16,14 @@ import {
 export const walletTypeEnum = pgEnum('wallet_type', ['hot', 'cold', 'hardware', 'native'])
 
 export const connectionTypeEnum = pgEnum('connection_type', [
-  'manual',
-  'walletconnect',
-  'custodial',
+  'manual', // user pasted the address
+  'walletconnect', // connected via WalletConnect v2
+  'custodial', // Clutch holds the encrypted key
 ])
 
+/** Solana is the primary chain. */
 export const chainIdEnum = pgEnum('chain_id', [
-  'solana',
+  'solana', // primary
   'ethereum',
   'base',
   'polygon',
@@ -30,7 +31,12 @@ export const chainIdEnum = pgEnum('chain_id', [
   'optimism',
 ])
 
-export const txStatusEnum = pgEnum('tx_status', ['pending', 'confirmed', 'failed'])
+export const txStatusEnum = pgEnum('tx_status', [
+  'pending',
+  'confirmed',
+  'failed',
+  'policy_denied',
+])
 export const txTypeEnum = pgEnum('tx_type', ['deposit', 'withdraw', 'payment', 'transfer'])
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -39,12 +45,17 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /** Null for anonymous accounts. Becomes set on upgrade. */
     email: text('email'),
+    /** Null for anonymous accounts. Becomes set on upgrade. */
     passwordHash: text('password_hash'),
+    /** True for accounts created without email/password. */
     isAnonymous: boolean('is_anonymous').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
+  // Unique index on email — Postgres treats NULLs as distinct, so multiple
+  // anonymous users (all with email=NULL) coexist fine.
   (t) => [uniqueIndex('users_email_idx').on(t.email)],
 )
 
@@ -59,7 +70,7 @@ export const pockets = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull().default('My Pocket'),
     /** Native balance in lamports (9 decimals). 1 SOL = 1_000_000_000 lamports. */
-    nativeBalance: bigint('native_balance', { mode: 'number' }).notNull().default(0),
+    nativeBalance: bigint('native_balance', { mode: 'bigint' }).notNull().default(BigInt(0)),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -78,10 +89,13 @@ export const wallets = pgTable(
     type: walletTypeEnum('type').notNull(),
     connectionType: connectionTypeEnum('connection_type').notNull().default('manual'),
     address: text('address').notNull(),
+    /** Default chain is solana. */
     chain: chainIdEnum('chain').notNull().default('solana'),
     label: text('label'),
     isDefault: boolean('is_default').notNull().default(false),
+    /** Encrypted private key blob — only populated for custodial wallets. */
     encryptedKey: text('encrypted_key'),
+    /** WalletConnect session topic — only populated for walletconnect type. */
     wcSessionTopic: text('wc_session_topic'),
     addedAt: timestamp('added_at').defaultNow().notNull(),
   },
@@ -101,10 +115,10 @@ export const walletBalances = pgTable(
       .notNull()
       .references(() => wallets.id, { onDelete: 'cascade' }),
     chain: chainIdEnum('chain').notNull(),
-    token: text('token').notNull(),
-    amount: bigint('amount', { mode: 'number' }).notNull().default(0),
-    decimals: integer('decimals').notNull().default(9),
-    usdValue: text('usd_value'),
+    token: text('token').notNull(), // 'SOL', 'USDC', 'BONK', etc.
+    amount: bigint('amount', { mode: 'bigint' }).notNull().default(BigInt(0)),
+    decimals: integer('decimals').notNull().default(9), // Solana default = 9
+    usdValue: text('usd_value'), // stored as string to avoid float precision
     fetchedAt: timestamp('fetched_at').defaultNow().notNull(),
   },
   (t) => [
@@ -128,7 +142,7 @@ export const transactions = pgTable(
     fromAddress: text('from_address').notNull(),
     toAddress: text('to_address').notNull(),
     /** Amount in the token's smallest unit (lamports for SOL, micro-USDC for USDC). */
-    amount: bigint('amount', { mode: 'number' }).notNull(),
+    amount: bigint('amount', { mode: 'bigint' }).notNull(),
     token: text('token').notNull(),
     chain: chainIdEnum('chain').notNull().default('solana'),
     txHash: text('tx_hash'),
@@ -144,6 +158,10 @@ export const transactions = pgTable(
 )
 
 // ─── Spending Policies ────────────────────────────────────────────────────────
+//
+// One policy per pocket. Defines guardrails the agent must respect when
+// executing payments or swaps. Enforced server-side in the agent executor
+// before any on-chain action.
 
 export const pocketPolicies = pgTable(
   'pocket_policies',
@@ -153,12 +171,19 @@ export const pocketPolicies = pgTable(
       .notNull()
       .unique()
       .references(() => pockets.id, { onDelete: 'cascade' }),
+    /** Policy is enforced when true. Default off for new pockets. */
     enabled: boolean('enabled').notNull().default(false),
+    /** Max single transaction size in USD. Null = no limit. */
     maxPerTxUsd: text('max_per_tx_usd'),
+    /** Max cumulative spend per day (UTC) in USD. Null = no limit. */
     maxPerDayUsd: text('max_per_day_usd'),
+    /** Comma-separated allowlist of recipient addresses. Null/empty = any address. */
     allowedRecipients: text('allowed_recipients'),
+    /** Comma-separated blocklist of recipient addresses. Always rejected. */
     blockedRecipients: text('blocked_recipients'),
+    /** Comma-separated allowlist of token symbols (USDC, SOL, ...). Null/empty = any token. */
     allowedTokens: text('allowed_tokens'),
+    /** Comma-separated blocklist of token symbols. Always rejected. */
     blockedTokens: text('blocked_tokens'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
