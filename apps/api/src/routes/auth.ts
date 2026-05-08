@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { sign } from 'hono/jwt'
-import { hash, compare } from 'bcryptjs'
+import bcrypt from 'bcryptjs'
 import { db } from '../db/client.js'
 import { users, pockets } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
@@ -10,6 +10,8 @@ import { authMiddleware } from '../middleware/auth.js'
 type Env = { Variables: { userId: string } }
 
 export const authRoutes = new Hono<Env>()
+
+const { hash, compare } = bcrypt
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

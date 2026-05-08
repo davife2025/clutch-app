@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -136,6 +137,10 @@ const server = serve(
     console.log(`    WebSocket          →  ws://localhost:${info.port}/ws?token=<jwt>`)
   },
 )
+
+console.log('DATABASE_URL:', process.env.DATABASE_URL) 
+console.log('DATABASE_URL_DIRECT:', process.env.DATABASE_URL_DIRECT) 
+console.log('JWT_SECRET:', process.env.JWT_SECRET) 
 
 injectWebSocket(server)
 startRealtimeWorkers()
