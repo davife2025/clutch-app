@@ -211,13 +211,13 @@ importers:
         specifier: ^18.3.0
         version: 18.3.7(@types/react@18.3.28)
       autoprefixer:
-        specifier: ^10.4.0
+        specifier: ^10.5.0
         version: 10.5.0(postcss@8.5.12)
       postcss:
-        specifier: ^8.4.0
+        specifier: ^8.5.12
         version: 8.5.12
       tailwindcss:
-        specifier: ^3.4.0
+        specifier: ^3.4.19
         version: 3.4.19(tsx@4.21.0)(yaml@2.8.3)
       typescript:
         specifier: ^5.4.0
