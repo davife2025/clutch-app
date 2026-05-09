@@ -138,7 +138,7 @@ app.notFound((c) =>
 const port = Number(process.env.PORT ?? 3001)
 
 const server = serve(
-  { fetch: app.fetch, port },
+  { fetch: app.fetch, port , hostname: '0.0.0.0'},
   (info) => {
     console.log(`🫙  Clutch API v0.1.0  →  http://localhost:${info.port}`)
     console.log(`    WebSocket          →  ws://localhost:${info.port}/ws?token=<jwt>`)
