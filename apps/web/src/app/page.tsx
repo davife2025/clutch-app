@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ArrowUpRight, Wallet, Sparkles, Shield } from 'lucide-react'
+import { Logo } from '@/components/brand/Logo'
 
 export default function LandingPage() {
   return (
@@ -13,12 +14,16 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="relative z-10 max-w-6xl mx-auto px-8 py-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gold to-gold-600 flex items-center justify-center">
-            <span className="text-ink-900 font-display font-bold text-lg">C</span>
-          </div>
+          <Logo size={36} />
           <span className="font-display text-xl tracking-tight">Clutch</span>
         </div>
         <div className="flex items-center gap-6">
+          <Link
+            href="/registry"
+            className="text-ink-200 hover:text-cream transition text-sm"
+          >
+            Registry
+          </Link>
           <Link
             href="/auth/login"
             className="text-ink-200 hover:text-cream transition text-sm"

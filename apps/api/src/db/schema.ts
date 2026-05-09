@@ -191,6 +191,185 @@ export const pocketPolicies = pgTable(
   (t) => [index('policies_pocket_idx').on(t.pocketId)],
 )
 
+// ─── x402 Receipts ────────────────────────────────────────────────────────────
+//
+// Audit-grade record of every paywall payment made through Clutch.
+// Distinct from the general `transactions` table because receipts have
+// different semantics — they bind a payment to a specific resource URL
+// and HTTP status, with the original 402 challenge preserved for proof.
+
+export const x402Receipts = pgTable(
+  'x402_receipts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    pocketId: uuid('pocket_id')
+      .notNull()
+      .references(() => pockets.id, { onDelete: 'cascade' }),
+    /** Paywalled URL the agent was trying to access */
+    resourceUrl: text('resource_url').notNull(),
+    /** HTTP method (GET, POST, ...) */
+    method: text('method').notNull().default('GET'),
+    /** Solana tx signature for the payment */
+    txHash: text('tx_hash').notNull(),
+    /** Amount in token's smallest unit */
+    amount: bigint('amount', { mode: 'bigint' }).notNull(),
+    token: text('token').notNull(),
+    /** Recipient from the 402 challenge — the resource owner */
+    payTo: text('pay_to').notNull(),
+    /** USD value at time of payment, for cost tracking dashboards */
+    amountUsd: text('amount_usd'),
+    /** Final HTTP status after the payment was retried (200, 403, 500...) */
+    finalStatus: integer('final_status'),
+    /** Whether the post-payment request succeeded — agents need this for retry logic */
+    succeeded: boolean('succeeded').notNull().default(false),
+    /** Original 402 challenge body, JSON-encoded — kept for dispute resolution */
+    challenge: text('challenge'),
+    paidAt: timestamp('paid_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('receipts_pocket_idx').on(t.pocketId),
+    index('receipts_resource_idx').on(t.resourceUrl),
+    index('receipts_paid_at_idx').on(t.paidAt),
+  ],
+)
+
+// ─── Agents ───────────────────────────────────────────────────────────────────
+//
+// A user-created payment agent. Distinct from the AI tool-use agent in the
+// codebase — this is a *named persona* the user has configured to handle
+// specific x402 payment workflows. Each agent is bound to one pocket and
+// inherits that pocket's spending policy.
+
+export const agentStatusEnum = pgEnum('agent_status', ['active', 'paused', 'revoked'])
+
+export const agents = pgTable(
+  'agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    pocketId: uuid('pocket_id')
+      .notNull()
+      .references(() => pockets.id, { onDelete: 'cascade' }),
+    /** User-chosen agent name, e.g. "API spending agent" */
+    name: text('name').notNull(),
+    /** Template the agent was created from, for analytics + UI */
+    template: text('template').notNull().default('custom'),
+    /** Free-text description of what the agent does — shown in the UI */
+    description: text('description'),
+    status: agentStatusEnum('status').notNull().default('active'),
+    /** Last-known instruction the user gave the agent */
+    lastInstruction: text('last_instruction'),
+    /** Total amount this agent has spent (USD), for the per-agent dashboard */
+    totalSpentUsd: text('total_spent_usd').notNull().default('0'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('agents_pocket_idx').on(t.pocketId)],
+)
+
+// ─── Registered Agents (the public registry) ──────────────────────────────────
+//
+// Different from `agents` above, which are user-private payment templates.
+// `registered_agents` is the public directory: agents that any user can
+// discover and authorize to make payments from their pocket.
+//
+// Identity is the Ed25519 public key. The agent proves ownership by signing
+// payment-request payloads. We never custody the agent's private key — that
+// stays with the agent operator.
+
+export const registeredAgentStatusEnum = pgEnum('registered_agent_status', [
+  'active',
+  'unlisted',
+  'suspended',
+])
+
+export const registeredAgents = pgTable(
+  'registered_agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The user (developer) who registered this agent — they manage it */
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Display name shown in the directory, e.g. "MarketBot" */
+    name: text('name').notNull(),
+    /** Short tagline for the directory listing — under 140 chars */
+    tagline: text('tagline').notNull(),
+    /** Full description shown on the agent's detail page */
+    description: text('description').notNull(),
+    /** Ed25519 public key (base58-encoded) — agent's identity */
+    publicKey: text('public_key').notNull().unique(),
+    /** Where the agent's payment requests come from (for callback verification) */
+    homepage: text('homepage'),
+    /** Logo URL, if provided */
+    logoUrl: text('logo_url'),
+    /** Category for filtering — e.g. "trading", "content", "inference" */
+    category: text('category').notNull().default('other'),
+    /** What the agent typically pays for, semicolon-separated free text */
+    paymentScope: text('payment_scope'),
+    status: registeredAgentStatusEnum('status').notNull().default('active'),
+    /** How many users have an active grant for this agent — for sort/discovery */
+    activeGrantsCount: integer('active_grants_count').notNull().default(0),
+    /** Total volume this agent has moved through Clutch in USD — for trust signal */
+    totalVolumeUsd: text('total_volume_usd').notNull().default('0'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('registered_agents_pubkey_idx').on(t.publicKey),
+    index('registered_agents_owner_idx').on(t.ownerId),
+    index('registered_agents_status_idx').on(t.status),
+    index('registered_agents_category_idx').on(t.category),
+  ],
+)
+
+// ─── Agent Grants (per-user authorizations) ───────────────────────────────────
+//
+// When a user authorizes an agent, we create a grant binding their pocket to
+// the agent with a scoped policy. The grant's policy operates inside the
+// pocket's overall policy — both must permit a payment for it to go through.
+
+export const agentGrantStatusEnum = pgEnum('agent_grant_status', [
+  'active',
+  'revoked',
+  'expired',
+])
+
+export const agentGrants = pgTable(
+  'agent_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    pocketId: uuid('pocket_id')
+      .notNull()
+      .references(() => pockets.id, { onDelete: 'cascade' }),
+    registeredAgentId: uuid('registered_agent_id')
+      .notNull()
+      .references(() => registeredAgents.id, { onDelete: 'cascade' }),
+    /** Per-tx limit in USD scoped to this agent. Null = no per-tx limit. */
+    maxPerTxUsd: text('max_per_tx_usd'),
+    /** Daily cap in USD scoped to this agent. Null = no daily cap. */
+    maxPerDayUsd: text('max_per_day_usd'),
+    /** Allowed recipients for this agent's payments (CSV). Null = inherits pocket policy. */
+    allowedRecipients: text('allowed_recipients'),
+    /** Allowed tokens for this agent (CSV). Null = inherits pocket policy. */
+    allowedTokens: text('allowed_tokens'),
+    /** Optional expiration — null means never expires (until revoked) */
+    expiresAt: timestamp('expires_at'),
+    status: agentGrantStatusEnum('status').notNull().default('active'),
+    /** Total this agent has spent under this grant, in USD */
+    spentUsd: text('spent_usd').notNull().default('0'),
+    /** When the agent last actually used this grant */
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('agent_grants_pocket_idx').on(t.pocketId),
+    index('agent_grants_agent_idx').on(t.registeredAgentId),
+    // A pocket can only have one active grant per agent — enforce uniqueness
+    uniqueIndex('agent_grants_pocket_agent_idx').on(t.pocketId, t.registeredAgentId),
+  ],
+)
+
 // ─── Type exports ─────────────────────────────────────────────────────────────
 
 export type UserRow = typeof users.$inferSelect

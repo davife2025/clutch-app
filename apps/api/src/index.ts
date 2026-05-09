@@ -1,4 +1,3 @@
-import 'dotenv/config'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -19,6 +18,9 @@ import { agentRoutes } from './routes/agent.js'
 import { payRoutes } from './routes/pay.js'
 import { x402Routes } from './routes/x402.js'
 import { policyRoutes } from './routes/policy.js'
+import { receiptsRoutes } from './routes/receipts.js'
+import { agentsRoutes as agentsManagementRoutes } from './routes/agents-mgmt.js'
+import { registryPublicRoutes, registryRoutes } from './routes/registry.js'
 import {
   registerClient,
   removeClient,
@@ -84,6 +86,11 @@ app.route('/pockets', connectRoutes)
 app.route('/agent', agentRoutes)
 app.route('/pockets', payRoutes)
 app.route('/pockets', policyRoutes)
+app.route('/pockets', receiptsRoutes)
+app.route('/pockets', agentsManagementRoutes)
+app.route('/', agentsManagementRoutes)
+app.route('/registry', registryPublicRoutes)
+app.route('/registry', registryRoutes)
 app.route('/x402', x402Routes)
 
 // ─── WebSocket ─────────────────────────────────────────────────────────────────
@@ -137,10 +144,6 @@ const server = serve(
     console.log(`    WebSocket          →  ws://localhost:${info.port}/ws?token=<jwt>`)
   },
 )
-
-console.log('DATABASE_URL:', process.env.DATABASE_URL) 
-console.log('DATABASE_URL_DIRECT:', process.env.DATABASE_URL_DIRECT) 
-console.log('JWT_SECRET:', process.env.JWT_SECRET) 
 
 injectWebSocket(server)
 startRealtimeWorkers()

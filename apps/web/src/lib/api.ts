@@ -153,6 +153,186 @@ class ApiClient {
     })
   }
 
+  // ── Agents (consumer-facing payment agents) ─────────────────────────────────
+
+  async listAgents(pocketId: string) {
+    return this.request<{
+      agents: Array<{
+        id: string
+        name: string
+        template: string
+        description: string | null
+        status: 'active' | 'paused' | 'revoked'
+        lastInstruction: string | null
+        totalSpentUsd: number
+        createdAt: string
+      }>
+    }>(`/pockets/${pocketId}/agents`)
+  }
+
+  async createAgent(
+    pocketId: string,
+    input: { name: string; template?: string; description?: string },
+  ) {
+    return this.request<{ agent: { id: string; name: string } }>(
+      `/pockets/${pocketId}/agents`,
+      { method: 'POST', body: JSON.stringify(input) },
+    )
+  }
+
+  async getAgent(agentId: string) {
+    return this.request<{
+      agent: {
+        id: string
+        pocketId: string
+        name: string
+        template: string
+        description: string | null
+        status: 'active' | 'paused' | 'revoked'
+        lastInstruction: string | null
+        totalSpentUsd: number
+        createdAt: string
+      }
+      recentReceipts: Array<{
+        id: string
+        resourceUrl: string
+        amount: string
+        token: string
+        succeeded: boolean
+        paidAt: string
+      }>
+    }>(`/agents/${agentId}`)
+  }
+
+  async updateAgent(
+    agentId: string,
+    update: { status?: 'active' | 'paused' | 'revoked'; name?: string; description?: string },
+  ) {
+    return this.request<{ agent: any }>(`/agents/${agentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    })
+  }
+
+  async instructAgent(agentId: string, instruction: string) {
+    return this.request<{
+      plan: {
+        instruction: string
+        urls: string[]
+        canExecute: boolean
+        explanation: string
+      }
+      status: string
+    }>(`/agents/${agentId}/instruct`, {
+      method: 'POST',
+      body: JSON.stringify({ instruction }),
+    })
+  }
+
+  // ── Registry (the public agent directory) ───────────────────────────────────
+
+  async listRegistry(opts: { category?: string; search?: string; sort?: string } = {}) {
+    const params = new URLSearchParams()
+    if (opts.category) params.set('category', opts.category)
+    if (opts.search) params.set('search', opts.search)
+    if (opts.sort) params.set('sort', opts.sort)
+    const qs = params.toString()
+    return this.request<{
+      agents: Array<{
+        id: string
+        name: string
+        tagline: string
+        logoUrl: string | null
+        category: string
+        paymentScope: string | null
+        activeGrantsCount: number
+        totalVolumeUsd: number
+        publicKey: string
+        createdAt: string
+      }>
+    }>(`/registry/agents${qs ? `?${qs}` : ''}`)
+  }
+
+  async getRegistryAgent(id: string) {
+    return this.request<{
+      agent: {
+        id: string
+        name: string
+        tagline: string
+        description: string
+        publicKey: string
+        homepage: string | null
+        logoUrl: string | null
+        category: string
+        paymentScope: string | null
+        activeGrantsCount: number
+        totalVolumeUsd: number
+        createdAt: string
+      }
+    }>(`/registry/agents/${id}`)
+  }
+
+  async listMyRegisteredAgents() {
+    return this.request<{
+      agents: Array<{
+        id: string
+        name: string
+        tagline: string
+        description: string
+        publicKey: string
+        homepage: string | null
+        logoUrl: string | null
+        category: string
+        paymentScope: string | null
+        status: 'active' | 'unlisted' | 'suspended'
+        activeGrantsCount: number
+        totalVolumeUsd: number
+        createdAt: string
+      }>
+    }>(`/registry/my-agents`)
+  }
+
+  async registerAgent(input: {
+    name: string
+    tagline: string
+    description: string
+    publicKey: string
+    homepage?: string
+    logoUrl?: string
+    category?: string
+    paymentScope?: string
+  }) {
+    return this.request<{ agent: { id: string; name: string } }>(`/registry/agents`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  async updateRegisteredAgent(
+    id: string,
+    update: Partial<{
+      name: string
+      tagline: string
+      description: string
+      homepage: string | null
+      logoUrl: string | null
+      category: string
+      paymentScope: string | null
+      status: 'active' | 'unlisted'
+    }>,
+  ) {
+    return this.request<{ agent: any }>(`/registry/agents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    })
+  }
+
+  async deleteRegisteredAgent(id: string) {
+    return this.request<{ id: string; deleted: boolean }>(`/registry/agents/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
   // ── Pockets ─────────────────────────────────────────────────────────────────
   async listPockets() {
     return this.request<{ pockets: any[] }>('/pockets')
