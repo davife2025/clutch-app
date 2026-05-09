@@ -38,6 +38,12 @@ importers:
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@types/bcryptjs':
+        specifier: ^2.4.6
+        version: 2.4.6
+      '@types/jsonwebtoken':
+        specifier: ^9.0.6
+        version: 9.0.10
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -47,6 +53,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      drizzle-kit:
+        specifier: ^0.30.4
+        version: 0.30.4
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(postgres@3.4.9)
@@ -62,28 +71,18 @@ importers:
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
-      viem:
-        specifier: ^2.48.4
-        version: 2.48.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
-      zod:
-        specifier: ^3.23.0
-        version: 3.25.76
-    devDependencies:
-      '@types/bcryptjs':
-        specifier: ^2.4.6
-        version: 2.4.6
-      '@types/jsonwebtoken':
-        specifier: ^9.0.6
-        version: 9.0.10
-      drizzle-kit:
-        specifier: ^0.30.4
-        version: 0.30.4
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      viem:
+        specifier: ^2.48.4
+        version: 2.48.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       vitest:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@25.6.0)(terser@5.46.2)
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
 
   apps/extension:
     dependencies:
