@@ -9,6 +9,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "start": "pnpm --filter @clutch/api start",
     "db:push": "turbo db:push --filter=@clutch/api",
     "db:generate": "turbo db:generate --filter=@clutch/api",
     "clean": "turbo clean && rm -rf node_modules"
