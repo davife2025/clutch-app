@@ -33,13 +33,13 @@
     "tsx": "^4.21.0",
     "viem": "^2.48.4",
     "zod": "^3.23.0",
-       "@types/bcryptjs": "^2.4.6",
+      "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.6",
     "drizzle-kit": "^0.30.4",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   },
   "devDependencies": {
- 
+  
   }
 }
