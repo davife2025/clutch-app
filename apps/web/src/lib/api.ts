@@ -9,23 +9,23 @@ export interface ApiError {
 }
 
 class ApiClient {
-  private token: string | null = null
-
-  constructor() {
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem(TOKEN_KEY)
-    }
+  // Note: we always re-read from localStorage on each request rather than
+  // caching in memory. The previous version cached token in `this.token` and
+  // only synced from localStorage in the constructor, which produced bugs
+  // when a fresh tab ran the constructor before the token was written, or
+  // when navigating between pages caused the singleton to fall out of sync.
+  private get token(): string | null {
+    if (typeof window === 'undefined') return null
+    return localStorage.getItem(TOKEN_KEY)
   }
 
   setToken(token: string) {
-    this.token = token
     if (typeof window !== 'undefined') {
       localStorage.setItem(TOKEN_KEY, token)
     }
   }
 
   clearToken() {
-    this.token = null
     if (typeof window !== 'undefined') {
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(POCKET_KEY)
@@ -68,10 +68,22 @@ class ApiClient {
       'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) ?? {}),
     }
-    if (this.token) headers.Authorization = `Bearer ${this.token}`
+    const token = this.token
+    if (token) headers.Authorization = `Bearer ${token}`
 
     try {
       const res = await fetch(`${API_URL}${path}`, { ...options, headers })
+
+      // Handle 401 globally: token is invalid/expired. Clear it and let the
+      // auth guard redirect on the next mount. We DON'T redirect from here
+      // because that races with React rendering and creates the loop the
+      // user was hitting (page mounts → 401 → redirect to login → user logs
+      // in → redirect to page → 401 again because token didn't actually
+      // refresh, etc).
+      if (res.status === 401 && token) {
+        this.clearToken()
+      }
+
       const json = await res.json()
       return json
     } catch (err) {
@@ -333,9 +345,102 @@ class ApiClient {
     })
   }
 
+  // ── Grants (per-pocket authorizations of registered agents) ─────────────────
+
+  async listGrants(pocketId: string) {
+    return this.request<{
+      grants: Array<{
+        id: string
+        agent: {
+          id: string
+          name: string
+          tagline: string
+          logoUrl: string | null
+          category: string
+          publicKey: string
+        }
+        maxPerTxUsd: number | null
+        maxPerDayUsd: number | null
+        allowedRecipients: string[]
+        allowedTokens: string[]
+        expiresAt: string | null
+        status: 'active' | 'revoked' | 'expired'
+        spentUsd: number
+        lastUsedAt: string | null
+        createdAt: string
+      }>
+    }>(`/pockets/${pocketId}/grants`)
+  }
+
+  async createGrant(
+    pocketId: string,
+    input: {
+      registeredAgentId: string
+      maxPerTxUsd?: number | null
+      maxPerDayUsd?: number | null
+      allowedRecipients?: string[] | null
+      allowedTokens?: string[] | null
+      expiresAt?: string | null
+    },
+  ) {
+    return this.request<{ grant: { id: string } }>(`/pockets/${pocketId}/grants`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  async updateGrant(
+    grantId: string,
+    update: Partial<{
+      maxPerTxUsd: number | null
+      maxPerDayUsd: number | null
+      allowedRecipients: string[] | null
+      allowedTokens: string[] | null
+    }>,
+  ) {
+    return this.request<{ grant: any }>(`/grants/${grantId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    })
+  }
+
+  async revokeGrant(grantId: string) {
+    return this.request<{ id: string; revoked: boolean }>(`/grants/${grantId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ── x402 Receipts (paywall payment audit trail) ─────────────────────────────
+
+  async listReceipts(pocketId: string, limit = 50) {
+    return this.request<{
+      receipts: Array<{
+        id: string
+        resourceUrl: string
+        method: string
+        txHash: string
+        amount: string
+        token: string
+        amountUsd: string | null
+        payTo: string
+        finalStatus: number | null
+        succeeded: boolean
+        paidAt: string
+        explorerUrl: string
+      }>
+    }>(`/pockets/${pocketId}/receipts?limit=${limit}`)
+  }
+
   // ── Pockets ─────────────────────────────────────────────────────────────────
   async listPockets() {
     return this.request<{ pockets: any[] }>('/pockets')
+  }
+
+  async createPocket(name: string) {
+    return this.request<{ pocket: { id: string; name: string } }>('/pockets', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
   }
 
   async getPocket(id: string) {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, Wallet, Sparkles, Activity, Shield, Settings, LogOut, Bot, Globe } from 'lucide-react'
+import { Home, Wallet, Sparkles, Activity, Shield, Settings, LogOut, Bot, Globe, Key, Code, Receipt } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Logo } from '@/components/brand/Logo'
 
@@ -10,10 +10,13 @@ const NAV = [
   { href: '/dashboard', label: 'Pocket', icon: Home },
   { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet },
   { href: '/dashboard/agents', label: 'My agents', icon: Bot },
+  { href: '/dashboard/grants', label: 'Grants', icon: Key },
   { href: '/dashboard/my-agents', label: 'Published', icon: Globe },
   { href: '/dashboard/agent', label: 'Chat', icon: Sparkles },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity },
+  { href: '/dashboard/receipts', label: 'Receipts', icon: Receipt },
   { href: '/dashboard/policy', label: 'Policy', icon: Shield },
+  { href: '/dashboard/docs', label: 'Docs', icon: Code },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 

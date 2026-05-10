@@ -11,11 +11,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
     "@clutch/connectors": "workspace:*",
     "@clutch/core": "workspace:*",
     "@clutch/vault": "workspace:*",
-    "@solana/web3.js": "^1.98.4"
+    "@solana/web3.js": "^1.98.4",
+    "openai": "^6.37.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

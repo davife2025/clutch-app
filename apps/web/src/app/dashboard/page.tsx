@@ -12,6 +12,7 @@ import { PolicyStatusCard } from '@/components/pocket/PolicyStatusCard'
 export default function DashboardPage() {
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [livePulse, setLivePulse] = useState(false)
 
@@ -35,18 +36,43 @@ export default function DashboardPage() {
   }, [])
 
   async function loadSummary() {
-    const pocketId = api.getPocketId()
-    if (!pocketId) {
-      const { data } = await api.listPockets()
-      if (data?.pockets[0]) {
-        api.setPocketId(data.pockets[0].id)
-        const { data: s } = await api.getPocketSummary(data.pockets[0].id)
-        setSummary(s)
+    setLoadError(null)
+    const cachedPocketId = api.getPocketId()
+
+    // First try the cached pocket. If that fails, fall back to listPockets so
+    // we recover from a stale localStorage entry instead of dead-ending.
+    if (cachedPocketId) {
+      const { data, error } = await api.getPocketSummary(cachedPocketId)
+      if (data) {
+        setSummary(data)
+        setLoading(false)
+        return
       }
-    } else {
-      const { data } = await api.getPocketSummary(pocketId)
-      setSummary(data)
+      // The cached pocket lookup failed (404 = stale, 401 = the auth guard will
+      // handle it, anything else = transient). Either way, try listPockets.
+      if (error?.code === 'NOT_FOUND') {
+        api.setPocketId('') // clear stale cache so we don't loop on it
+      }
     }
+
+    // No cached pocket OR cached lookup failed — list pockets and use the first.
+    const { data: list, error: listErr } = await api.listPockets()
+    if (listErr) {
+      setLoadError(listErr.message)
+      setLoading(false)
+      return
+    }
+    if (list?.pockets[0]) {
+      api.setPocketId(list.pockets[0].id)
+      const { data: s, error } = await api.getPocketSummary(list.pockets[0].id)
+      if (s) {
+        setSummary(s)
+      } else {
+        setLoadError(error?.message ?? 'Could not load pocket summary')
+      }
+    }
+    // If list.pockets is empty, summary stays null — and we render the genuine
+    // "no pocket exists" empty state below (which now does NOT redirect).
     setLoading(false)
   }
 
@@ -70,12 +96,48 @@ export default function DashboardPage() {
   }
 
   if (!summary) {
+    // Three real cases here:
+    //   1. Load actually failed (network, 500, etc.) — offer retry
+    //   2. User has no pockets yet — that's a backend bug since signup
+    //      creates a pocket atomically, but show a "create one" CTA that
+    //      hits the API instead of bouncing through register
+    //   3. Token is bad — handled upstream by useAuthGuard, won't reach here
     return (
-      <div className="text-center py-20">
-        <p className="text-ink-200 mb-4">No pocket found.</p>
-        <Link href="/auth/register" className="text-gold hover:text-gold-300 transition">
-          Open one
-        </Link>
+      <div className="text-center py-20 max-w-sm mx-auto">
+        <p className="text-cream font-display text-2xl mb-2">
+          {loadError ? 'Could not load your pocket' : 'No pocket yet'}
+        </p>
+        <p className="text-ink-300 text-sm mb-6">
+          {loadError
+            ? loadError
+            : 'Your account exists but has no pocket attached. This usually means signup didn\'t complete cleanly.'}
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => {
+              setLoading(true)
+              loadSummary()
+            }}
+            className="px-4 py-2 bg-gold hover:bg-gold-300 text-ink-900 rounded-lg font-medium transition text-sm"
+          >
+            Retry
+          </button>
+          <button
+            onClick={async () => {
+              setLoading(true)
+              const { data } = await api.createPocket('My pocket')
+              if (data?.pocket?.id) {
+                api.setPocketId(data.pocket.id)
+                await loadSummary()
+              } else {
+                setLoading(false)
+              }
+            }}
+            className="px-4 py-2 border border-ink-600 hover:border-ink-500 text-cream rounded-lg transition text-sm"
+          >
+            Create a pocket
+          </button>
+        </div>
       </div>
     )
   }

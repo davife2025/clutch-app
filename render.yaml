@@ -74,8 +74,8 @@ services:
       - key: OPTIMISM_RPC_URL
         value: https://mainnet.optimism.io
 
-      # Anthropic — for the AI agent
-      - key: ANTHROPIC_API_KEY
+      # Hugging Face Inference Providers — for Kimi K2 LLM
+      - key: HF_TOKEN
         sync: false
 
       # WalletConnect — get from https://cloud.walletconnect.com

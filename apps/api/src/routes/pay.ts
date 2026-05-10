@@ -169,9 +169,9 @@ payRoutes.post('/:id/pay/agent', async (c) => {
       },
     })
   } catch (err: any) {
-    if (err.message?.includes('ANTHROPIC_API_KEY')) {
+    if (err.message?.includes('HF_TOKEN') || err.status === 401) {
       return c.json(
-        { error: { code: 'CONFIG_ERROR', message: 'AI agent not configured' } },
+        { error: { code: 'CONFIG_ERROR', message: 'AI agent not configured — set HF_TOKEN' } },
         503,
       )
     }

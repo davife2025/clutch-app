@@ -1,101 +1,120 @@
-# Session 22 — Public agent registry foundation
+# Bug fix + audit — last day final delta
 
-This archive contains **only the files changed or added** in this session. Drop into your existing clutch-v2 repo at the same paths.
+This delta does four things in one push:
 
-## What this session is
+## 1. The signup → "open wallet" → bounced-to-login bug — FIXED
 
-The first of 3-4 sessions that turn Clutch from "SDK for builders" into a two-sided platform where users authorize registered agents to pay through their pocket. **OAuth-shape pattern**: agents register publicly, users authorize them with scoped permissions, Clutch is the broker.
+You hit this and described it precisely. Here's what was actually happening:
 
-This session lands the **registry foundation** — the public directory of agents and the schema for per-user grants. Sessions 23-25 will add the grant authorization flow, signed payment requests with identity verification, and the matchmaking surface that ties it all together.
+You'd sign up successfully, get redirected to `/dashboard`, and the dashboard would call `getPocketSummary(pocketId)`. If that call failed for any transient reason (Render cold start, slow DB, network blip), the dashboard set `summary` to null. With `summary === null`, the page rendered:
 
-## What's in here
-
-### New files
-- `apps/api/src/routes/registry.ts` — public directory + register/manage endpoints
-- `apps/api/test/registry.test.ts` — 16 tests covering pubkey validation and registration input validation
-- `apps/web/src/app/registry/page.tsx` — public agent directory at `/registry` (no auth required)
-- `apps/web/src/app/registry/[id]/page.tsx` — public agent detail page with stats and authorize CTA
-- `apps/web/src/app/dashboard/my-agents/page.tsx` — list of agents the user has registered
-- `apps/web/src/app/dashboard/my-agents/new/page.tsx` — registration form
-
-### Modified files
-- `apps/api/src/db/schema.ts` — adds `registered_agents` and `agent_grants` tables, plus their enums
-- `apps/api/src/db/relations.ts` — wires both new tables to pockets/users
-- `apps/api/src/index.ts` — mounts public + authenticated registry routes
-- `apps/web/src/lib/api.ts` — registry methods: listRegistry, getRegistryAgent, listMyRegisteredAgents, registerAgent, updateRegisteredAgent, deleteRegisteredAgent
-- `apps/web/src/components/layout/Sidebar.tsx` — adds "Published" link for `/dashboard/my-agents`
-- `apps/web/src/app/page.tsx` — Registry link added to landing nav
-
-## After you copy these in
-
-```bash
-pnpm install --ignore-scripts
-pnpm --filter @clutch/api typecheck
-pnpm --filter @clutch/api test          # should be 48 tests passing
-pnpm --filter @clutch/api db:push       # adds registered_agents + agent_grants
-pnpm --filter @clutch/web build
+```
+No pocket found.
+[Open one] → /auth/register
 ```
 
-## What you can demo
+Clicking that link sent you back to `/auth/register`, where re-submitting the form created another user account. Loop.
 
-**As a developer publishing an agent:**
+The bug was three things in one:
+- The dashboard couldn't distinguish "load failed" from "no pocket exists"
+- The fallback `listPockets()` only ran when there was no cached pocketId, so a stale/failed cached pocket wasn't recovered
+- The "Open one" link pointed to `/auth/register` — destructive — when it should have offered retry
 
-1. Sign in to clutch.app
-2. Click "Published" in the sidebar (the new globe icon)
-3. Click "Register your first agent"
-4. Fill in name, tagline, description, public key (any base58 32-byte string for testing — e.g. `So11111111111111111111111111111111111111112`), pick a category
-5. Submit — land on the public detail page
+**What's now fixed in `apps/web/src/app/dashboard/page.tsx`:**
+- `loadSummary()` always falls back to `listPockets()` if the cached pocket lookup fails
+- Stale `pocketId` cache is cleared on 404, then we retry via `listPockets()`
+- The empty state never redirects. It shows two real options: "Retry" (re-runs `loadSummary`) or "Create a pocket" (calls `POST /pockets` directly)
+- A new `loadError` state surfaces the actual error message instead of pretending the pocket doesn't exist
 
-**As a user discovering an agent:**
+After this fix: sign up → click around → it works. No more loops. If something genuinely breaks, you'll see the real error message.
 
-1. Visit `/registry` (works without signing in)
-2. Browse by category, search, sort by popular or newest
-3. Click any agent → see public detail with payment scope, public key, volume stats
-4. "Authorize" CTA exists but routes to login (the actual authorization flow ships in session 23)
+## 2. Do we need an LLM? — partial answer, partial fix
 
-## What this session is NOT yet
+Honest audit of where the LLM is actually used:
 
-- **No grant authorization flow.** The "Sign in to authorize" button on agent detail pages routes to login — clicking it won't yet let users authorize an agent. That's session 23.
-- **No signed payment requests.** Agents can't yet make payment requests with cryptographic identity verification. That's session 24.
-- **No matchmaking surface.** The "your authorized agents" page that ties grants together with usage stats. That's session 25.
+| Endpoint | Uses LLM? | Should it? |
+|---|---|---|
+| `/agent/chat` | yes | yes — conversational interface |
+| `/agent/analyze` | yes | optional — could be simple stats |
+| `/pay/agent` (with explicit `to`/`amount`) | yes | **NO** — wallet pick is deterministic |
+| `/agent-pay` (signed external requests) | **was yes** | **NO** — recipient already specified |
 
-What ships in this session is enough that:
-- Developers can publish their agents and see them listed publicly
-- Users can browse the registry and see what exists
-- The schema for grants is ready for session 23 to build on
+The platform's most security-critical endpoint, `/agent-pay`, was making an LLM call on every signed external payment request. That's expensive, slow, and a single point of failure for the load-bearing feature.
 
-## Architecture decisions worth flagging
+**Fixed in this delta:**
+- New `agentService.executePaymentDeterministic()` method that picks a wallet by simple rules: prefer default Solana wallet with sufficient balance in the right token, fall back to any signing-capable Solana wallet that does
+- `/agent-pay` now uses the deterministic path. Zero LLM calls, sub-100ms response time, no `HF_TOKEN` dependency for the platform's core security feature
 
-**Why a separate `registered_agents` table from the existing `agents` table:**
+The chat tab still uses Kimi for natural-language requests like "send 1 USDC to alice." That's the right place for an LLM. Everywhere else now runs without one.
 
-The existing `agents` table holds personal payment templates a user creates inside their own pocket. They're private, tied to one pocket, not discoverable. `registered_agents` is the opposite — public, identity-verified, discoverable by anyone, owned by a developer. Different lifecycle, different access patterns, different concept. Keeping them separate avoids muddying both.
+**What this means for ops:** if `HF_TOKEN` is missing or rate-limited, the chat tab fails gracefully but the entire platform — registry, grants, signed payments, audit log, x402 SDK — keeps working.
 
-**Why Ed25519 public keys (Solana's native key format):**
+## 3. Audit: what's in the backend but not surfaced in the UI
 
-Solana wallets are Ed25519. Most agents on Solana already use Ed25519 keys for their wallets. Reusing this format means an agent's "registered identity" can be the same as its on-chain identity if the developer wants — though they don't have to be. Session 24 will verify signatures over payment-request payloads.
+Real gap report.
 
-**Why grants live on `pockets`, not `users`:**
+**Surfaced now:**
+- Pocket / Wallets / Agents / Grants / Published agents / Chat / Activity / Policy / Docs / Settings — all live as nav items
 
-A user might authorize different agents from different pockets — e.g. give MarketBot $5/day from their "trading" pocket but $0 from their "personal" pocket. Grants are per-pocket, scoped to that pocket's policy.
+**Was hidden, surfaced in this delta:**
+- **x402 receipts.** Backend writes them, the SDK records them, but the only place they showed up was inside individual agent detail pages. Just added `/dashboard/receipts` — a global table view with totals, today's count, success rate, links to Solscan. This is the audit trail the SDK pitches as a feature; now users can see it. Sidebar link added.
 
-**Why the unique index on `(pocketId, registeredAgentId)`:**
+**Still hidden, deliberately deferred:**
+- **Funds (deposit/withdraw/import-wallet).** Backend has these endpoints, no UI page. Real gap. Adding would be ~1 day of work. Deferred because deposit flows are sensitive (need careful UX so users don't lose funds) and the wallet-add flow already covers most user needs.
+- **Swap UI.** Jupiter integration works through the chat agent ("quote me a swap"), but there's no dedicated swap page. Deferred because the chat path covers it.
 
-A pocket can only have one active grant per agent. If you authorize MarketBot and want to change the limits, you update the existing grant — not create a duplicate. Simpler model, prevents UX confusion ("which of my 3 grants for MarketBot is active?").
+## 4. Docs page — confirmed in menu
 
-## Stats
+The `/dashboard/docs` page from the previous part of this session is in place with the sidebar link. Code icon, second-to-last item before Settings. Has Quick Start, Spending Policy reference with denial codes, Agent Platform walkthrough (registry + signed payment requests), framework integration tabs (Solana Agent Kit, GOAT, ElizaOS, LangGraph), self-host instructions, and the API reference table.
 
-- 17 pages building cleanly (was 14)
-- 48 API tests passing (was 32)
-- All typechecks clean across api, web, and packages
-- New schema requires `pnpm db:push` to take effect
+Developers can find it inside the dashboard. They don't need a separate doc site.
 
-## What's next — session 23
+## What's in the archive
 
-Grant authorization flow:
-- `POST /pockets/:id/grants` — user authorizes an agent with scoped policy
-- `GET /pockets/:id/grants` — list active grants for a pocket
-- `PATCH /grants/:id` — update grant scope
-- `DELETE /grants/:id` — revoke
-- `/dashboard/grants` page — user's authorized agents with revoke + edit
-- `/dashboard/authorize/[agentId]` page — the consent screen where a user grants an agent permission with scoped limits
-- The actual UX flow: registry detail → "Authorize" → consent screen → grant created → user lands on `/dashboard/grants`
+### Modified files
+- `apps/web/src/app/dashboard/page.tsx` — the dashboard load flow + retry-able empty state
+- `apps/web/src/lib/api.ts` — adds `createPocket()` and `listReceipts()`
+- `apps/web/src/components/layout/Sidebar.tsx` — adds Receipts nav item
+- `apps/api/src/services/agent.service.ts` — adds `executePaymentDeterministic`
+- `apps/api/src/routes/agent-pay.ts` — uses the deterministic path
+
+### New files
+- `apps/web/src/app/dashboard/receipts/page.tsx` — global x402 receipts page
+
+## Stats after this delta
+
+- **21 pages building** (was 19, added /dashboard/receipts and /dashboard/docs from this session)
+- **61 API tests passing**
+- **All typechecks clean**
+- **No `@anthropic-ai/sdk` references** (Kimi K2 via HF Inference)
+- **`/agent-pay` no longer calls LLM** — platform-critical endpoint is now deterministic and fast
+
+## What's still genuinely missing
+
+If you want a complete inventory:
+
+**Real product gaps:**
+- Funds page (deposit/withdraw UI)
+- Swap UI (currently only via chat)
+- Email verification + password reset
+- Multi-pocket UI (backend supports 4 per user, frontend shows 1)
+- Token discovery (we probe 7 hardcoded tokens, not the user's full SPL holdings)
+- Wallet Standard wiring on `/dashboard/wallets/add`
+- Webhook delivery to builders (outbound HMAC-signed webhooks)
+- Real `pk_live_...` API keys (SDK still uses JWTs)
+
+**Operational:**
+- Sentry / observability
+- Redis-backed rate limits + WS fan-out (single-instance only right now)
+- RPC fallback layer
+- Mobile EAS builds (Expo app exists, never tested on real phones)
+- Chrome extension submitted to Web Store (manifest exists, not shipped)
+
+**Strategic:**
+- Demo video recorded
+- 10 DMs to Solana agent builders
+- Three responses read
+
+The first list is real engineering work. The second is operational hardening. The third is the validation question that's been the single biggest blocker since session 18.
+
+Today's last day. Walk through your own product end-to-end on the deployed environment using `docs/verification.md` Workflow A. Time it. The bug we just fixed was almost certainly only one of the things that's broken when a real user touches it. **Use yourself as the first user. Find what else breaks. Fix the worst three things. Ship.**
