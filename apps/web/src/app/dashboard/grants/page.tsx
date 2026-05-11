@@ -33,15 +33,27 @@ export default function GrantsPage() {
   const [revoking, setRevoking] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
 
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   useEffect(() => {
     load()
   }, [])
 
   async function load() {
+    setLoadError(null)
     const pocketId = api.getPocketId()
-    if (!pocketId) return
-    const { data } = await api.listGrants(pocketId)
-    if (data) setGrants(data.grants)
+    if (!pocketId) {
+      setLoadError('No pocket selected. Go to your Pocket tab to set one up.')
+      setLoading(false)
+      return
+    }
+    const { data, error } = await api.listGrants(pocketId)
+    if (error) {
+      // Surface the error instead of showing an empty list with no explanation
+      setLoadError(error.message)
+    } else if (data) {
+      setGrants(data.grants)
+    }
     setLoading(false)
   }
 
@@ -86,6 +98,32 @@ export default function GrantsPage() {
 
       {loading ? (
         <div className="text-ink-300">Loading...</div>
+      ) : loadError ? (
+        <div className="p-5 rounded-xl border border-rust/30 bg-rust/5">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-rust/10 border border-rust/20 flex items-center justify-center text-rust shrink-0">
+              <Shield className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-cream font-medium mb-1">Could not load grants</p>
+              <p className="text-ink-200 text-sm mb-3">{loadError}</p>
+              <p className="text-xs text-ink-400">
+                If this says "Unauthorized" or "Invalid token," the API server may have been
+                redeployed with a different JWT secret since you signed in. Sign out and back in
+                to refresh your session. Don't worry — your data is safe.
+              </p>
+              <button
+                onClick={() => {
+                  setLoading(true)
+                  load()
+                }}
+                className="mt-3 px-3 py-1.5 text-xs text-cream bg-ink-700 hover:bg-ink-600 rounded transition"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
       ) : grants.length === 0 ? (
         <div className="text-center py-16 px-6 rounded-2xl border border-dashed border-ink-600 bg-ink-800/40">
           <Shield className="w-12 h-12 text-ink-400 mx-auto mb-4" />
