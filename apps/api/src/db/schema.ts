@@ -1,3 +1,19 @@
+/**
+ * BigInt JSON serialization polyfill.
+ *
+ * drizzle-kit serializes the schema snapshot to JSON when diffing against
+ * the database. Our schema has bigint columns with BigInt defaults — those
+ * crash JSON.stringify with "Do not know how to serialize a BigInt" during
+ * `drizzle-kit push`.
+ *
+ * Adding toJSON here (rather than only in the runtime app entry) means the
+ * polyfill takes effect whenever this schema file is loaded — which is by
+ * both the running API and by drizzle-kit during migrations.
+ */
+;(BigInt.prototype as any).toJSON = function () {
+  return this.toString()
+}
+
 import {
   pgTable,
   text,
@@ -10,6 +26,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +87,7 @@ export const pockets = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull().default('My Pocket'),
     /** Native balance in lamports (9 decimals). 1 SOL = 1_000_000_000 lamports. */
-    nativeBalance: bigint('native_balance', { mode: 'bigint' }).notNull().default(BigInt(0)),
+    nativeBalance: bigint('native_balance', { mode: 'bigint' }).notNull().default(sql`0`),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -116,7 +133,7 @@ export const walletBalances = pgTable(
       .references(() => wallets.id, { onDelete: 'cascade' }),
     chain: chainIdEnum('chain').notNull(),
     token: text('token').notNull(), // 'SOL', 'USDC', 'BONK', etc.
-    amount: bigint('amount', { mode: 'bigint' }).notNull().default(BigInt(0)),
+    amount: bigint('amount', { mode: 'bigint' }).notNull().default(sql`0`),
     decimals: integer('decimals').notNull().default(9), // Solana default = 9
     usdValue: text('usd_value'), // stored as string to avoid float precision
     fetchedAt: timestamp('fetched_at').defaultNow().notNull(),

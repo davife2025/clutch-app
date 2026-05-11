@@ -25,6 +25,9 @@ pocketRoutes.get('/', async (c) => {
     data: {
       pockets: userPockets.map((p) => ({
         ...p,
+        // BigInt is not JSON-serializable. Convert to string for the wire,
+        // and expose the human-readable SOL value alongside.
+        nativeBalance: p.nativeBalance.toString(),
         nativeBalanceSol: lamportsToSol(p.nativeBalance),
       })),
     },
@@ -54,6 +57,7 @@ pocketRoutes.get('/:id', async (c) => {
     data: {
       pocket: {
         ...pocket,
+        nativeBalance: pocket.nativeBalance.toString(),
         nativeBalanceSol: lamportsToSol(pocket.nativeBalance),
       },
     },

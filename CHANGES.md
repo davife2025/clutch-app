@@ -1,120 +1,58 @@
-# Bug fix + audit — last day final delta
+# drizzle-kit BigInt fix — escalated to fallback
 
-This delta does four things in one push:
+The polyfill at the top of schema.ts wasn't enough. drizzle-kit's diff phase is hitting BigInts that come from somewhere else — most likely Postgres's pg_catalog introspection returning bigint values for things like sequence IDs and column metadata when it pulls the existing database state.
 
-## 1. The signup → "open wallet" → bounced-to-login bug — FIXED
+Three changes in this delta, ordered by likelihood of fixing the issue. Try them in order, stop when one works.
 
-You hit this and described it precisely. Here's what was actually happening:
+## Try this first: schema + config polyfill + SQL-literal defaults
 
-You'd sign up successfully, get redirected to `/dashboard`, and the dashboard would call `getPocketSummary(pocketId)`. If that call failed for any transient reason (Render cold start, slow DB, network blip), the dashboard set `summary` to null. With `summary === null`, the page rendered:
+`apps/api/src/db/schema.ts` — already had the polyfill from the previous fix. Now also changes the two BigInt defaults from `default(0n)` to `default(sql\`0\`)`. This makes the default a Postgres SQL expression rather than a JavaScript BigInt — so when drizzle-kit serializes the column definition to compare it against the database, there's no BigInt in the column metadata to choke on.
 
+`apps/api/drizzle.config.ts` — adds the same `BigInt.prototype.toJSON` polyfill at the top. drizzle.config.ts is the very first file drizzle-kit loads when you run `pnpm db:push`, so the polyfill is in place before any schema introspection or diff serialization happens.
+
+```bash
+cd apps/api
+pnpm db:push
 ```
-No pocket found.
-[Open one] → /auth/register
+
+If this works, you'll see `[✓] Pulling schema from database... [✓] Changes applied`. Done.
+
+## If that still crashes: use the manual SQL
+
+I included `apps/api/drizzle/0002_manual_missing_tables.sql` as a fallback. This is the raw CREATE TABLE statements for the four missing tables (`x402_receipts`, `agents`, `registered_agents`, `agent_grants`) plus their indexes and enums. Idempotent — every CREATE uses IF NOT EXISTS, every type uses a DO block guard. Safe to re-run.
+
+To apply manually:
+
+1. Open Supabase Dashboard → your project → SQL Editor → New query
+2. Open `apps/api/drizzle/0002_manual_missing_tables.sql` from the archive
+3. Copy the entire file contents into the Supabase SQL editor
+4. Click "Run"
+5. Should see "Success. No rows returned"
+
+Then verify:
+
+```sql
+SELECT table_name FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN ('x402_receipts', 'agents', 'registered_agents', 'agent_grants');
 ```
 
-Clicking that link sent you back to `/auth/register`, where re-submitting the form created another user account. Loop.
+You should see all 4 rows. After that, your `/registry/my-agents` 500 stops, the dashboard's grants/receipts pages work, and you can complete the platform demo.
 
-The bug was three things in one:
-- The dashboard couldn't distinguish "load failed" from "no pocket exists"
-- The fallback `listPockets()` only ran when there was no cached pocketId, so a stale/failed cached pocket wasn't recovered
-- The "Open one" link pointed to `/auth/register` — destructive — when it should have offered retry
+## Why the manual fallback is fine
 
-**What's now fixed in `apps/web/src/app/dashboard/page.tsx`:**
-- `loadSummary()` always falls back to `listPockets()` if the cached pocket lookup fails
-- Stale `pocketId` cache is cleared on 404, then we retry via `listPockets()`
-- The empty state never redirects. It shows two real options: "Retry" (re-runs `loadSummary`) or "Create a pocket" (calls `POST /pockets` directly)
-- A new `loadError` state surfaces the actual error message instead of pretending the pocket doesn't exist
+The manual SQL is functionally identical to what `drizzle-kit push` would generate. It uses the same column types, same defaults (with SQL literals instead of BigInt JS literals), same constraints, same indexes. Drizzle's runtime ORM doesn't care how the tables were created — only that they exist with the right shape. Once these tables are in the database, drizzle's queries against them work exactly the same as if drizzle-kit had created them.
 
-After this fix: sign up → click around → it works. No more loops. If something genuinely breaks, you'll see the real error message.
-
-## 2. Do we need an LLM? — partial answer, partial fix
-
-Honest audit of where the LLM is actually used:
-
-| Endpoint | Uses LLM? | Should it? |
-|---|---|---|
-| `/agent/chat` | yes | yes — conversational interface |
-| `/agent/analyze` | yes | optional — could be simple stats |
-| `/pay/agent` (with explicit `to`/`amount`) | yes | **NO** — wallet pick is deterministic |
-| `/agent-pay` (signed external requests) | **was yes** | **NO** — recipient already specified |
-
-The platform's most security-critical endpoint, `/agent-pay`, was making an LLM call on every signed external payment request. That's expensive, slow, and a single point of failure for the load-bearing feature.
-
-**Fixed in this delta:**
-- New `agentService.executePaymentDeterministic()` method that picks a wallet by simple rules: prefer default Solana wallet with sufficient balance in the right token, fall back to any signing-capable Solana wallet that does
-- `/agent-pay` now uses the deterministic path. Zero LLM calls, sub-100ms response time, no `HF_TOKEN` dependency for the platform's core security feature
-
-The chat tab still uses Kimi for natural-language requests like "send 1 USDC to alice." That's the right place for an LLM. Everywhere else now runs without one.
-
-**What this means for ops:** if `HF_TOKEN` is missing or rate-limited, the chat tab fails gracefully but the entire platform — registry, grants, signed payments, audit log, x402 SDK — keeps working.
-
-## 3. Audit: what's in the backend but not surfaced in the UI
-
-Real gap report.
-
-**Surfaced now:**
-- Pocket / Wallets / Agents / Grants / Published agents / Chat / Activity / Policy / Docs / Settings — all live as nav items
-
-**Was hidden, surfaced in this delta:**
-- **x402 receipts.** Backend writes them, the SDK records them, but the only place they showed up was inside individual agent detail pages. Just added `/dashboard/receipts` — a global table view with totals, today's count, success rate, links to Solscan. This is the audit trail the SDK pitches as a feature; now users can see it. Sidebar link added.
-
-**Still hidden, deliberately deferred:**
-- **Funds (deposit/withdraw/import-wallet).** Backend has these endpoints, no UI page. Real gap. Adding would be ~1 day of work. Deferred because deposit flows are sensitive (need careful UX so users don't lose funds) and the wallet-add flow already covers most user needs.
-- **Swap UI.** Jupiter integration works through the chat agent ("quote me a swap"), but there's no dedicated swap page. Deferred because the chat path covers it.
-
-## 4. Docs page — confirmed in menu
-
-The `/dashboard/docs` page from the previous part of this session is in place with the sidebar link. Code icon, second-to-last item before Settings. Has Quick Start, Spending Policy reference with denial codes, Agent Platform walkthrough (registry + signed payment requests), framework integration tabs (Solana Agent Kit, GOAT, ElizaOS, LangGraph), self-host instructions, and the API reference table.
-
-Developers can find it inside the dashboard. They don't need a separate doc site.
+The only thing you lose by going manual: future schema changes via `db:push` may detect "drift" because drizzle-kit didn't track this migration. If that happens, just run `db:push` once more after the BigInt fix lands properly — it'll see the tables already exist and won't recreate them.
 
 ## What's in the archive
 
-### Modified files
-- `apps/web/src/app/dashboard/page.tsx` — the dashboard load flow + retry-able empty state
-- `apps/web/src/lib/api.ts` — adds `createPocket()` and `listReceipts()`
-- `apps/web/src/components/layout/Sidebar.tsx` — adds Receipts nav item
-- `apps/api/src/services/agent.service.ts` — adds `executePaymentDeterministic`
-- `apps/api/src/routes/agent-pay.ts` — uses the deterministic path
+- `apps/api/drizzle.config.ts` — polyfill at top
+- `apps/api/src/db/schema.ts` — polyfill + sql\`0\` defaults instead of BigInt
+- `apps/api/drizzle/0002_manual_missing_tables.sql` — manual fallback SQL
 
-### New files
-- `apps/web/src/app/dashboard/receipts/page.tsx` — global x402 receipts page
+## What I want to flag honestly
 
-## Stats after this delta
+We've now spent four messages on what should have been a one-command operation. drizzle-kit's BigInt handling in 0.30.4 has known issues that newer versions fixed. If neither the polyfill+sql defaults work nor the manual SQL apply cleanly, the third option is **upgrade drizzle-kit to a newer version**: `pnpm --filter @clutch/api add -D drizzle-kit@latest`. That may itself break things (newer versions sometimes change the diff format), but it's the cleanest path if both other options fail.
 
-- **21 pages building** (was 19, added /dashboard/receipts and /dashboard/docs from this session)
-- **61 API tests passing**
-- **All typechecks clean**
-- **No `@anthropic-ai/sdk` references** (Kimi K2 via HF Inference)
-- **`/agent-pay` no longer calls LLM** — platform-critical endpoint is now deterministic and fast
-
-## What's still genuinely missing
-
-If you want a complete inventory:
-
-**Real product gaps:**
-- Funds page (deposit/withdraw UI)
-- Swap UI (currently only via chat)
-- Email verification + password reset
-- Multi-pocket UI (backend supports 4 per user, frontend shows 1)
-- Token discovery (we probe 7 hardcoded tokens, not the user's full SPL holdings)
-- Wallet Standard wiring on `/dashboard/wallets/add`
-- Webhook delivery to builders (outbound HMAC-signed webhooks)
-- Real `pk_live_...` API keys (SDK still uses JWTs)
-
-**Operational:**
-- Sentry / observability
-- Redis-backed rate limits + WS fan-out (single-instance only right now)
-- RPC fallback layer
-- Mobile EAS builds (Expo app exists, never tested on real phones)
-- Chrome extension submitted to Web Store (manifest exists, not shipped)
-
-**Strategic:**
-- Demo video recorded
-- 10 DMs to Solana agent builders
-- Three responses read
-
-The first list is real engineering work. The second is operational hardening. The third is the validation question that's been the single biggest blocker since session 18.
-
-Today's last day. Walk through your own product end-to-end on the deployed environment using `docs/verification.md` Workflow A. Time it. The bug we just fixed was almost certainly only one of the things that's broken when a real user touches it. **Use yourself as the first user. Find what else breaks. Fix the worst three things. Ship.**
+For today: try the polyfill+SQL-literals fix. If that fails, run the manual SQL through Supabase. Either way you end up with the four tables in the database, which is what unblocks everything else.

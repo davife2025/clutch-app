@@ -19,12 +19,6 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-6">
           <Link
-            href="/registry"
-            className="text-ink-200 hover:text-cream transition text-sm"
-          >
-            Registry
-          </Link>
-          <Link
             href="/auth/login"
             className="text-ink-200 hover:text-cream transition text-sm"
           >

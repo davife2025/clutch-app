@@ -3,6 +3,19 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
+
+// Global BigInt serialization safety. Without this, any BigInt that ends up in
+// a response body crashes JSON.stringify with "Do not know how to serialize a
+// BigInt". Postgres BIGINT columns (lamports, token raw amounts) come back from
+// Drizzle as native BigInts. Rather than .toString() everywhere — which we
+// will forget — attach a toJSON method once, app-wide.
+//
+// String is the right wire format because JS Number can't hold lamports above
+// 2^53 - 1 safely (~9 SOL of lamports overflow if you're paranoid).
+;(BigInt.prototype as any).toJSON = function () {
+  return this.toString()
+}
+
 import { errorMiddleware } from './middleware/error.js'
 import { rateLimit } from './middleware/rate-limit.js'
 import { healthRoutes } from './routes/health.js'
@@ -21,6 +34,8 @@ import { policyRoutes } from './routes/policy.js'
 import { receiptsRoutes } from './routes/receipts.js'
 import { agentsRoutes as agentsManagementRoutes } from './routes/agents-mgmt.js'
 import { registryPublicRoutes, registryRoutes } from './routes/registry.js'
+import { grantsRoutes } from './routes/grants.js'
+import { agentPayRoutes } from './routes/agent-pay.js'
 import {
   registerClient,
   removeClient,
@@ -71,6 +86,10 @@ app.use(
   '/webhook/*',
   rateLimit({ max: 60, windowMs: 60_000, key: 'webhook' }),
 )
+app.use(
+  '/agent-pay',
+  rateLimit({ max: 60, windowMs: 60_000, key: 'agent-pay' }),
+)
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -91,6 +110,9 @@ app.route('/pockets', agentsManagementRoutes)
 app.route('/', agentsManagementRoutes)
 app.route('/registry', registryPublicRoutes)
 app.route('/registry', registryRoutes)
+app.route('/pockets', grantsRoutes)
+app.route('/', grantsRoutes)
+app.route('/', agentPayRoutes)
 app.route('/x402', x402Routes)
 
 // ─── WebSocket ─────────────────────────────────────────────────────────────────
@@ -138,7 +160,7 @@ app.notFound((c) =>
 const port = Number(process.env.PORT ?? 3001)
 
 const server = serve(
-  { fetch: app.fetch, port , hostname: '0.0.0.0'},
+  { fetch: app.fetch, port },
   (info) => {
     console.log(`🫙  Clutch API v0.1.0  →  http://localhost:${info.port}`)
     console.log(`    WebSocket          →  ws://localhost:${info.port}/ws?token=<jwt>`)

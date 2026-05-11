@@ -21,6 +21,7 @@ export type ClutchEvent =
 const TOKEN_KEY = 'clutch_token'
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000] // backoff, ms
+const MAX_RECONNECT_ATTEMPTS = 5 // give up after this — Render free tier may not support WS at all
 
 interface UseClutchSocketOptions {
   onEvent?: (event: ClutchEvent) => void
@@ -82,7 +83,14 @@ export function useClutchSocket({ onEvent, enabled = true }: UseClutchSocketOpti
       setStatus('closed')
       wsRef.current = null
       if (closedByUserRef.current) return
-      // Reconnect with backoff
+      // Stop hammering Render if WS is genuinely unavailable. After
+      // MAX_RECONNECT_ATTEMPTS, give up silently. The rest of the app uses
+      // polling or manual refresh as fallback — WS is a nice-to-have for live
+      // updates, not load-bearing.
+      if (attemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        console.warn('[ws] giving up after max reconnect attempts')
+        return
+      }
       const delay = RECONNECT_DELAYS[Math.min(attemptRef.current, RECONNECT_DELAYS.length - 1)]
       attemptRef.current += 1
       setTimeout(() => {
