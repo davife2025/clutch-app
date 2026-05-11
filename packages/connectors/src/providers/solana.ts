@@ -105,16 +105,20 @@ export class SolanaConnector implements SigningConnector {
     return 5000n + priorityCost
   }
 
-  async sendTransaction(request: TxRequest, privateKeyBase58: string): Promise<TxReceipt> {
-    const secretKey = bs58.decode(privateKeyBase58)
-    const keypair = Keypair.fromSecretKey(secretKey)
+  /**
+   * Build an unsigned versioned transaction for a transfer.
+   * Used by both custodial signing (in sendTransaction) and WalletConnect signing
+   * (where the user's external wallet does the signing).
+   */
+  async buildTransferTransaction(
+    fromPubkey: PublicKey,
+    request: TxRequest,
+  ): Promise<{ tx: VersionedTransaction; blockhash: string; lastValidBlockHeight: number }> {
     const toPubkey = new PublicKey(request.to)
-
     const priorityMicroLamports =
       request.priorityFeeMicroLamports ?? DEFAULT_PRIORITY_FEE_MICRO_LAMPORTS
     const computeUnits = request.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT
 
-    // Build instructions
     const instructions = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityMicroLamports }),
@@ -123,7 +127,7 @@ export class SolanaConnector implements SigningConnector {
     if (request.token === 'SOL') {
       instructions.push(
         SystemProgram.transfer({
-          fromPubkey: keypair.publicKey,
+          fromPubkey,
           toPubkey,
           lamports: Number(request.amount),
         }),
@@ -133,15 +137,15 @@ export class SolanaConnector implements SigningConnector {
       if (!tokenInfo) throw new Error(`Unknown SPL token: ${request.token}`)
 
       const mint = new PublicKey(tokenInfo.mint)
-      const fromAta = await getAssociatedTokenAddress(mint, keypair.publicKey)
+      const fromAta = await getAssociatedTokenAddress(mint, fromPubkey)
       const toAta = await getAssociatedTokenAddress(mint, toPubkey)
 
-      // Check if recipient has the ATA — create it if not
+      // Create recipient ATA if missing — payer is the sender
       const toAtaInfo = await this.connection.getAccountInfo(toAta)
       if (!toAtaInfo) {
         instructions.push(
           createAssociatedTokenAccountInstruction(
-            keypair.publicKey, // payer
+            fromPubkey, // payer
             toAta,
             toPubkey, // owner
             mint,
@@ -155,7 +159,7 @@ export class SolanaConnector implements SigningConnector {
         createTransferInstruction(
           fromAta,
           toAta,
-          keypair.publicKey,
+          fromPubkey,
           request.amount,
           [],
           TOKEN_PROGRAM_ID,
@@ -163,38 +167,38 @@ export class SolanaConnector implements SigningConnector {
       )
     }
 
-    // Build versioned transaction
     const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed')
 
     const message = new TransactionMessage({
-      payerKey: keypair.publicKey,
+      payerKey: fromPubkey,
       recentBlockhash: blockhash,
       instructions,
     }).compileToV0Message()
 
-    const tx = new VersionedTransaction(message)
-    tx.sign([keypair])
+    return { tx: new VersionedTransaction(message), blockhash, lastValidBlockHeight }
+  }
 
-    // Send with confirmation
-    const txHash = await this.connection.sendTransaction(tx, {
+  /**
+   * Submit a pre-signed transaction to the cluster and wait for confirmation.
+   */
+  async sendSignedTransaction(
+    signedTx: VersionedTransaction,
+    blockhash: string,
+    lastValidBlockHeight: number,
+  ): Promise<TxReceipt> {
+    const txHash = await this.connection.sendTransaction(signedTx, {
       skipPreflight: false,
       maxRetries: 3,
       preflightCommitment: 'confirmed',
     })
 
-    // Wait for confirmation
     const confirmation = await this.connection.confirmTransaction(
       { signature: txHash, blockhash, lastValidBlockHeight },
       'confirmed',
     )
 
     if (confirmation.value.err) {
-      return {
-        txHash,
-        blockNumber: 0n,
-        gasUsed: 5000n,
-        status: 'reverted',
-      }
+      return { txHash, blockNumber: 0n, gasUsed: 5000n, status: 'reverted' }
     }
 
     const txInfo = await this.connection.getTransaction(txHash, {
@@ -208,6 +212,19 @@ export class SolanaConnector implements SigningConnector {
       gasUsed: BigInt(txInfo?.meta?.fee ?? 5000),
       status: 'success',
     }
+  }
+
+  async sendTransaction(request: TxRequest, privateKeyBase58: string): Promise<TxReceipt> {
+    const secretKey = bs58.decode(privateKeyBase58)
+    const keypair = Keypair.fromSecretKey(secretKey)
+
+    const { tx, blockhash, lastValidBlockHeight } = await this.buildTransferTransaction(
+      keypair.publicKey,
+      request,
+    )
+    tx.sign([keypair])
+
+    return this.sendSignedTransaction(tx, blockhash, lastValidBlockHeight)
   }
 
   async signMessage(message: string, privateKeyBase58: string): Promise<string> {

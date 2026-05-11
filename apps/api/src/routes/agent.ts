@@ -18,9 +18,9 @@ agentRoutes.post('/analyze/:pocketId', async (c) => {
     const analysis = await agentService.analyzeP(pocketId)
     return c.json({ data: { analysis } })
   } catch (err: any) {
-    if (err.message?.includes('ANTHROPIC_API_KEY')) {
+    if (err.message?.includes('HF_TOKEN') || err.message?.includes('401') || err.status === 401) {
       return c.json(
-        { error: { code: 'CONFIG_ERROR', message: 'AI agent not configured — set ANTHROPIC_API_KEY' } },
+        { error: { code: 'CONFIG_ERROR', message: 'AI agent not configured — set HF_TOKEN (Hugging Face Inference token)' } },
         503,
       )
     }

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ArrowUpRight, Wallet, Sparkles, Shield } from 'lucide-react'
+import { Logo } from '@/components/brand/Logo'
 
 export default function LandingPage() {
   return (
@@ -13,9 +14,7 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="relative z-10 max-w-6xl mx-auto px-8 py-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gold to-gold-600 flex items-center justify-center">
-            <span className="text-ink-900 font-display font-bold text-lg">C</span>
-          </div>
+          <Logo size={36} />
           <span className="font-display text-xl tracking-tight">Clutch</span>
         </div>
         <div className="flex items-center gap-6">
@@ -43,56 +42,65 @@ export default function LandingPage() {
           </div>
 
           <h1 className="font-display text-7xl md:text-8xl font-light tracking-tightest leading-[0.95] mb-8 animate-fade-up">
-            Your wallets.
+            Wallets your AI
             <br />
-            <span className="italic font-normal text-gold">Always there.</span>
+            <span className="italic font-normal text-gold">won't drain.</span>
           </h1>
 
           <p
             className="text-xl text-ink-200 max-w-2xl leading-relaxed mb-12 animate-fade-up"
             style={{ animationDelay: '0.1s' }}
           >
-            Clutch is the layer above your Solana wallets. Connect Phantom, Backpack, Solflare —
-            see one balance, pay through any of them, let an AI agent route micropayments through
-            x402. The anti-wallet.
+            AI agents on Solana run with full custody — one bad decision and the wallet drains.
+            Clutch is the payment layer between agents and the chain: spending limits, audit logs,
+            x402 handling, and one-click revocation that any agent can plug into in five minutes.
           </p>
 
           <div
-            className="flex items-center gap-4 mb-20 animate-fade-up"
+            className="flex flex-wrap items-center gap-4 mb-6 animate-fade-up"
             style={{ animationDelay: '0.2s' }}
           >
             <Link
-              href="/auth/register"
+              href="/auth/try"
               className="group px-6 py-3 bg-gold hover:bg-gold-300 text-ink-900 rounded-lg font-medium flex items-center gap-2 transition"
             >
-              Open a pocket
+              Try without signing up
               <ArrowUpRight className="w-4 h-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Link>
             <Link
-              href="/auth/login"
+              href="/auth/register"
               className="px-6 py-3 border border-ink-500 hover:border-ink-300 text-ink-100 rounded-lg font-medium transition"
+            >
+              Open a pocket
+            </Link>
+            <Link
+              href="/auth/login"
+              className="px-6 py-3 text-ink-200 hover:text-cream rounded-lg font-medium transition"
             >
               Sign in
             </Link>
           </div>
+          <p className="text-xs text-ink-400 mb-20 animate-fade-up" style={{ animationDelay: '0.25s' }}>
+            No email, no credit card — try it now and add an account later if you keep using it.
+          </p>
         </div>
 
         {/* Three-column feature grid */}
         <div className="grid md:grid-cols-3 gap-px bg-ink-700/60 border border-ink-700/60 rounded-2xl overflow-hidden">
           <Feature
-            icon={<Wallet className="w-5 h-5" />}
-            title="Hold every wallet"
-            body="Phantom, Backpack, Ledger, custodial keys. All in one pocket. One unified balance, real-time."
+            icon={<Shield className="w-5 h-5" />}
+            title="Spending guardrails"
+            body="Per-transaction caps, daily limits, recipient allowlists. Enforced server-side before any chain interaction — even a hallucinating agent can't bypass them."
           />
           <Feature
             icon={<Sparkles className="w-5 h-5" />}
-            title="AI routes payments"
-            body="Tell the agent where to send money. It picks the best wallet, signs through the vault or WalletConnect, broadcasts on Solana."
+            title="Agent-native routing"
+            body="The AI picks the optimal wallet, swaps via Jupiter when needed, signs through the vault or WalletConnect, broadcasts on Solana — all in one call."
           />
           <Feature
-            icon={<Shield className="w-5 h-5" />}
-            title="x402 micropayments"
-            body="Drop our fetch wrapper into any app. HTTP 402 responses get paid automatically — programmatic access without friction."
+            icon={<Wallet className="w-5 h-5" />}
+            title="x402 payment handling"
+            body="Drop the fetch wrapper into any agent. HTTP 402 paywalls get paid automatically within policy — programmatic access without subscriptions."
           />
         </div>
       </section>

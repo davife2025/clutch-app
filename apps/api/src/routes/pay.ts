@@ -4,6 +4,8 @@ import { pockets, transactions } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
 import { authMiddleware } from '../middleware/auth.js'
 import { agentService } from '../services/agent.service.js'
+import { policyService } from '../services/policy.service.js'
+import { priceService } from '../services/price.service.js'
 import { humanToRaw } from '@clutch/core'
 import type { ChainId } from '@clutch/core'
 import { pushTxPending, pushTxConfirmed, pushBalanceUpdate } from '../realtime/manager.js'
@@ -18,10 +20,10 @@ payRoutes.use('*', authMiddleware)
  *
  * One-shot AI-routed payment:
  *   "Send 10 USDC to alice.sol" →
- *     agent checks all wallets →
- *     picks cheapest route →
- *     executes →
- *     returns tx hash
+ *     check spending policy →
+ *     agent picks cheapest Solana route →
+ *     execute →
+ *     return tx hash
  *
  * This is the signature Clutch endpoint.
  */
@@ -58,6 +60,61 @@ payRoutes.post('/:id/pay/agent', async (c) => {
         },
       },
       400,
+    )
+  }
+
+  // ─── Policy enforcement ────────────────────────────────────────────────────
+  // Check the spending policy BEFORE the agent gets involved. This is the
+  // critical safety guarantee — even a hallucinating agent can't bypass it.
+
+  const tokenUpper = String(token).toUpperCase()
+  const STABLES = new Set(['USDC', 'USDT', 'DAI'])
+  let amountUsd: number
+
+  if (STABLES.has(tokenUpper)) {
+    amountUsd = Number(amount)
+  } else {
+    const price = await priceService.getUsdPrice(tokenUpper)
+    amountUsd = price ? Number(amount) * price : 0
+  }
+
+  const decision = await policyService.evaluatePayment({
+    pocketId,
+    toAddress: String(to),
+    token: tokenUpper,
+    amountUsd,
+  })
+
+  if (!decision.allowed) {
+    // Record the denial so the user has an audit trail in /activity.
+    // Even denied attempts are valuable signal — "my agent tried this 3 times,
+    // my policy caught it" is exactly the visibility we want to give users.
+    try {
+      const decimals = STABLES.has(tokenUpper) ? 6 : tokenUpper === 'SOL' ? 9 : 6
+      await db.insert(transactions).values({
+        pocketId,
+        type: 'payment',
+        status: 'policy_denied',
+        fromAddress: pocket.id, // we didn't pick a wallet — use pocket id as placeholder
+        toAddress: String(to),
+        amount: humanToRaw(String(amount), decimals),
+        token: String(token),
+        chain: 'solana',
+        memo: decision.reason ?? 'Policy denied',
+      })
+    } catch {
+      // Audit log failure shouldn't block the response
+    }
+
+    return c.json(
+      {
+        error: {
+          code: decision.code ?? 'POLICY_DENIED',
+          message: decision.reason ?? 'Policy denied this payment',
+          context: decision.context,
+        },
+      },
+      403,
     )
   }
 
@@ -112,9 +169,9 @@ payRoutes.post('/:id/pay/agent', async (c) => {
       },
     })
   } catch (err: any) {
-    if (err.message?.includes('ANTHROPIC_API_KEY')) {
+    if (err.message?.includes('HF_TOKEN') || err.status === 401) {
       return c.json(
-        { error: { code: 'CONFIG_ERROR', message: 'AI agent not configured' } },
+        { error: { code: 'CONFIG_ERROR', message: 'AI agent not configured — set HF_TOKEN' } },
         503,
       )
     }

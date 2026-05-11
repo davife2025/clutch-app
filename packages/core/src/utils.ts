@@ -7,11 +7,12 @@ export function generateId(): string {
 
 // ── Lamport / SOL conversion ──────────────────────────────────────────────────
 
-/** Convert lamports (bigint) to SOL string. 1 SOL = 1_000_000_000 lamports. */
-export function lamportsToSol(lamports: bigint, decimals = 9): string {
+/** Convert lamports (bigint | number | string) to SOL string. 1 SOL = 1_000_000_000 lamports. */
+export function lamportsToSol(lamports: bigint | number | string, decimals = 9): string {
+  const big = BigInt(Math.round(Number(lamports)))
   const divisor = BigInt(10 ** decimals)
-  const whole = lamports / divisor
-  const remainder = lamports % divisor
+  const whole = big / divisor
+  const remainder = big % divisor
   const fraction = remainder.toString().padStart(decimals, '0').slice(0, 6).replace(/0+$/, '')
   return fraction ? `${whole}.${fraction}` : `${whole}`
 }
@@ -25,8 +26,8 @@ export function solToLamports(sol: string, decimals = 9): bigint {
 
 // ── Generic token conversion ──────────────────────────────────────────────────
 
-/** Convert raw token amount (bigint) to human-readable string. */
-export function rawToHuman(amount: bigint, decimals: number): string {
+/** Convert raw token amount (bigint | number | string) to human-readable string. */
+export function rawToHuman(amount: bigint | number | string, decimals: number): string {
   return lamportsToSol(amount, decimals)
 }
 
@@ -37,7 +38,7 @@ export function humanToRaw(amount: string, decimals: number): bigint {
 
 // ── ETH/wei for EVM chain support ─────────────────────────────────────────────
 
-export function weiToEth(wei: bigint, decimals = 18): string {
+export function weiToEth(wei: bigint | number | string, decimals = 18): string {
   return lamportsToSol(wei, decimals)
 }
 

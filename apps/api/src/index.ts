@@ -3,7 +3,21 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
+
+// Global BigInt serialization safety. Without this, any BigInt that ends up in
+// a response body crashes JSON.stringify with "Do not know how to serialize a
+// BigInt". Postgres BIGINT columns (lamports, token raw amounts) come back from
+// Drizzle as native BigInts. Rather than .toString() everywhere — which we
+// will forget — attach a toJSON method once, app-wide.
+//
+// String is the right wire format because JS Number can't hold lamports above
+// 2^53 - 1 safely (~9 SOL of lamports overflow if you're paranoid).
+;(BigInt.prototype as any).toJSON = function () {
+  return this.toString()
+}
+
 import { errorMiddleware } from './middleware/error.js'
+import { rateLimit } from './middleware/rate-limit.js'
 import { healthRoutes } from './routes/health.js'
 import { authRoutes } from './routes/auth.js'
 import { pocketRoutes } from './routes/pocket.js'
@@ -16,6 +30,12 @@ import { connectRoutes } from './routes/connect.js'
 import { agentRoutes } from './routes/agent.js'
 import { payRoutes } from './routes/pay.js'
 import { x402Routes } from './routes/x402.js'
+import { policyRoutes } from './routes/policy.js'
+import { receiptsRoutes } from './routes/receipts.js'
+import { agentsRoutes as agentsManagementRoutes } from './routes/agents-mgmt.js'
+import { registryPublicRoutes, registryRoutes } from './routes/registry.js'
+import { grantsRoutes } from './routes/grants.js'
+import { agentPayRoutes } from './routes/agent-pay.js'
 import {
   registerClient,
   removeClient,
@@ -32,6 +52,45 @@ app.use('*', logger())
 app.use('*', cors({ origin: process.env.CORS_ORIGIN ?? '*' }))
 app.use('*', errorMiddleware)
 
+// ─── Rate limits (applied per-route for explicit policy) ──────────────────────
+//
+// Auth is the most attack-prone — strict limits.
+// Payment endpoints get a reasonable limit to prevent runaway agent loops.
+// General reads are rate-limited globally with a high ceiling.
+
+app.use(
+  '/auth/login',
+  rateLimit({ max: 5, windowMs: 60_000, key: 'auth-login' }),
+)
+app.use(
+  '/auth/register',
+  rateLimit({ max: 3, windowMs: 5 * 60_000, key: 'auth-register' }),
+)
+app.use(
+  '/auth/anonymous',
+  rateLimit({ max: 5, windowMs: 5 * 60_000, key: 'auth-anonymous' }),
+)
+app.use(
+  '/auth/upgrade',
+  rateLimit({ max: 3, windowMs: 60_000, key: 'auth-upgrade' }),
+)
+app.use(
+  '/pockets/:id/pay/agent',
+  rateLimit({ max: 10, windowMs: 60_000, key: 'pay-agent' }),
+)
+app.use(
+  '/agent/*',
+  rateLimit({ max: 30, windowMs: 60_000, key: 'agent' }),
+)
+app.use(
+  '/webhook/*',
+  rateLimit({ max: 60, windowMs: 60_000, key: 'webhook' }),
+)
+app.use(
+  '/agent-pay',
+  rateLimit({ max: 60, windowMs: 60_000, key: 'agent-pay' }),
+)
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.route('/health', healthRoutes)
@@ -45,6 +104,15 @@ app.route('/webhook', webhookRoutes)
 app.route('/pockets', connectRoutes)
 app.route('/agent', agentRoutes)
 app.route('/pockets', payRoutes)
+app.route('/pockets', policyRoutes)
+app.route('/pockets', receiptsRoutes)
+app.route('/pockets', agentsManagementRoutes)
+app.route('/', agentsManagementRoutes)
+app.route('/registry', registryPublicRoutes)
+app.route('/registry', registryRoutes)
+app.route('/pockets', grantsRoutes)
+app.route('/', grantsRoutes)
+app.route('/', agentPayRoutes)
 app.route('/x402', x402Routes)
 
 // ─── WebSocket ─────────────────────────────────────────────────────────────────

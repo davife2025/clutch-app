@@ -1,6 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 const TOKEN_KEY = 'clutch_token'
 const POCKET_KEY = 'clutch_pocket_id'
+const ANON_KEY = 'clutch_is_anonymous'
 
 export interface ApiError {
   code: string
@@ -8,26 +9,27 @@ export interface ApiError {
 }
 
 class ApiClient {
-  private token: string | null = null
-
-  constructor() {
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem(TOKEN_KEY)
-    }
+  // Note: we always re-read from localStorage on each request rather than
+  // caching in memory. The previous version cached token in `this.token` and
+  // only synced from localStorage in the constructor, which produced bugs
+  // when a fresh tab ran the constructor before the token was written, or
+  // when navigating between pages caused the singleton to fall out of sync.
+  private get token(): string | null {
+    if (typeof window === 'undefined') return null
+    return localStorage.getItem(TOKEN_KEY)
   }
 
   setToken(token: string) {
-    this.token = token
     if (typeof window !== 'undefined') {
       localStorage.setItem(TOKEN_KEY, token)
     }
   }
 
   clearToken() {
-    this.token = null
     if (typeof window !== 'undefined') {
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(POCKET_KEY)
+      localStorage.removeItem(ANON_KEY)
     }
   }
 
@@ -42,6 +44,18 @@ class ApiClient {
     return localStorage.getItem(POCKET_KEY)
   }
 
+  setAnonymous(isAnonymous: boolean) {
+    if (typeof window !== 'undefined') {
+      if (isAnonymous) localStorage.setItem(ANON_KEY, '1')
+      else localStorage.removeItem(ANON_KEY)
+    }
+  }
+
+  isAnonymous(): boolean {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(ANON_KEY) === '1'
+  }
+
   isAuthenticated(): boolean {
     return !!this.token
   }
@@ -54,10 +68,22 @@ class ApiClient {
       'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) ?? {}),
     }
-    if (this.token) headers.Authorization = `Bearer ${this.token}`
+    const token = this.token
+    if (token) headers.Authorization = `Bearer ${token}`
 
     try {
       const res = await fetch(`${API_URL}${path}`, { ...options, headers })
+
+      // Handle 401 globally: token is invalid/expired. Clear it and let the
+      // auth guard redirect on the next mount. We DON'T redirect from here
+      // because that races with React rendering and creates the loop the
+      // user was hitting (page mounts → 401 → redirect to login → user logs
+      // in → redirect to page → 401 again because token didn't actually
+      // refresh, etc).
+      if (res.status === 401 && token) {
+        this.clearToken()
+      }
+
       const json = await res.json()
       return json
     } catch (err) {
@@ -67,22 +93,354 @@ class ApiClient {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   async register(email: string, password: string) {
-    return this.request<{ token: string; userId: string; pocketId: string }>('/auth/register', {
+    return this.request<{ token: string; userId: string; pocketId: string; isAnonymous: boolean }>(
+      '/auth/register',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      },
+    )
+  }
+
+  async login(email: string, password: string) {
+    return this.request<{ token: string; userId: string; isAnonymous: boolean }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
   }
 
-  async login(email: string, password: string) {
-    return this.request<{ token: string; userId: string }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
+  /** Create an anonymous account — no email required, full access. */
+  async anonymous() {
+    return this.request<{
+      token: string
+      userId: string
+      pocketId: string
+      isAnonymous: boolean
+    }>('/auth/anonymous', { method: 'POST' })
+  }
+
+  /** Convert an anonymous account to a permanent one. Preserves all data. */
+  async upgrade(email: string, password: string) {
+    return this.request<{ token: string; userId: string; isAnonymous: boolean }>(
+      '/auth/upgrade',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      },
+    )
+  }
+
+  /** Get spending policy for a pocket */
+  async getPolicy(pocketId: string) {
+    return this.request<{
+      policy: {
+        enabled: boolean
+        maxPerTxUsd: number | null
+        maxPerDayUsd: number | null
+        allowedRecipients: string[]
+        blockedRecipients: string[]
+        allowedTokens: string[]
+        blockedTokens: string[]
+      }
+      spentTodayUsd: number
+    }>(`/pockets/${pocketId}/policy`)
+  }
+
+  /** Update spending policy. Partial update — only sent fields change. */
+  async updatePolicy(
+    pocketId: string,
+    update: {
+      enabled?: boolean
+      maxPerTxUsd?: number | null
+      maxPerDayUsd?: number | null
+      allowedRecipients?: string[]
+      blockedRecipients?: string[]
+      allowedTokens?: string[]
+      blockedTokens?: string[]
+    },
+  ) {
+    return this.request<{ policy: any }>(`/pockets/${pocketId}/policy`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
     })
+  }
+
+  // ── Agents (consumer-facing payment agents) ─────────────────────────────────
+
+  async listAgents(pocketId: string) {
+    return this.request<{
+      agents: Array<{
+        id: string
+        name: string
+        template: string
+        description: string | null
+        status: 'active' | 'paused' | 'revoked'
+        lastInstruction: string | null
+        totalSpentUsd: number
+        createdAt: string
+      }>
+    }>(`/pockets/${pocketId}/agents`)
+  }
+
+  async createAgent(
+    pocketId: string,
+    input: { name: string; template?: string; description?: string },
+  ) {
+    return this.request<{ agent: { id: string; name: string } }>(
+      `/pockets/${pocketId}/agents`,
+      { method: 'POST', body: JSON.stringify(input) },
+    )
+  }
+
+  async getAgent(agentId: string) {
+    return this.request<{
+      agent: {
+        id: string
+        pocketId: string
+        name: string
+        template: string
+        description: string | null
+        status: 'active' | 'paused' | 'revoked'
+        lastInstruction: string | null
+        totalSpentUsd: number
+        createdAt: string
+      }
+      recentReceipts: Array<{
+        id: string
+        resourceUrl: string
+        amount: string
+        token: string
+        succeeded: boolean
+        paidAt: string
+      }>
+    }>(`/agents/${agentId}`)
+  }
+
+  async updateAgent(
+    agentId: string,
+    update: { status?: 'active' | 'paused' | 'revoked'; name?: string; description?: string },
+  ) {
+    return this.request<{ agent: any }>(`/agents/${agentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    })
+  }
+
+  async instructAgent(agentId: string, instruction: string) {
+    return this.request<{
+      plan: {
+        instruction: string
+        urls: string[]
+        canExecute: boolean
+        explanation: string
+      }
+      status: string
+    }>(`/agents/${agentId}/instruct`, {
+      method: 'POST',
+      body: JSON.stringify({ instruction }),
+    })
+  }
+
+  // ── Registry (the public agent directory) ───────────────────────────────────
+
+  async listRegistry(opts: { category?: string; search?: string; sort?: string } = {}) {
+    const params = new URLSearchParams()
+    if (opts.category) params.set('category', opts.category)
+    if (opts.search) params.set('search', opts.search)
+    if (opts.sort) params.set('sort', opts.sort)
+    const qs = params.toString()
+    return this.request<{
+      agents: Array<{
+        id: string
+        name: string
+        tagline: string
+        logoUrl: string | null
+        category: string
+        paymentScope: string | null
+        activeGrantsCount: number
+        totalVolumeUsd: number
+        publicKey: string
+        createdAt: string
+      }>
+    }>(`/registry/agents${qs ? `?${qs}` : ''}`)
+  }
+
+  async getRegistryAgent(id: string) {
+    return this.request<{
+      agent: {
+        id: string
+        name: string
+        tagline: string
+        description: string
+        publicKey: string
+        homepage: string | null
+        logoUrl: string | null
+        category: string
+        paymentScope: string | null
+        activeGrantsCount: number
+        totalVolumeUsd: number
+        createdAt: string
+      }
+    }>(`/registry/agents/${id}`)
+  }
+
+  async listMyRegisteredAgents() {
+    return this.request<{
+      agents: Array<{
+        id: string
+        name: string
+        tagline: string
+        description: string
+        publicKey: string
+        homepage: string | null
+        logoUrl: string | null
+        category: string
+        paymentScope: string | null
+        status: 'active' | 'unlisted' | 'suspended'
+        activeGrantsCount: number
+        totalVolumeUsd: number
+        createdAt: string
+      }>
+    }>(`/registry/my-agents`)
+  }
+
+  async registerAgent(input: {
+    name: string
+    tagline: string
+    description: string
+    publicKey: string
+    homepage?: string
+    logoUrl?: string
+    category?: string
+    paymentScope?: string
+  }) {
+    return this.request<{ agent: { id: string; name: string } }>(`/registry/agents`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  async updateRegisteredAgent(
+    id: string,
+    update: Partial<{
+      name: string
+      tagline: string
+      description: string
+      homepage: string | null
+      logoUrl: string | null
+      category: string
+      paymentScope: string | null
+      status: 'active' | 'unlisted'
+    }>,
+  ) {
+    return this.request<{ agent: any }>(`/registry/agents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    })
+  }
+
+  async deleteRegisteredAgent(id: string) {
+    return this.request<{ id: string; deleted: boolean }>(`/registry/agents/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ── Grants (per-pocket authorizations of registered agents) ─────────────────
+
+  async listGrants(pocketId: string) {
+    return this.request<{
+      grants: Array<{
+        id: string
+        agent: {
+          id: string
+          name: string
+          tagline: string
+          logoUrl: string | null
+          category: string
+          publicKey: string
+        }
+        maxPerTxUsd: number | null
+        maxPerDayUsd: number | null
+        allowedRecipients: string[]
+        allowedTokens: string[]
+        expiresAt: string | null
+        status: 'active' | 'revoked' | 'expired'
+        spentUsd: number
+        lastUsedAt: string | null
+        createdAt: string
+      }>
+    }>(`/pockets/${pocketId}/grants`)
+  }
+
+  async createGrant(
+    pocketId: string,
+    input: {
+      registeredAgentId: string
+      maxPerTxUsd?: number | null
+      maxPerDayUsd?: number | null
+      allowedRecipients?: string[] | null
+      allowedTokens?: string[] | null
+      expiresAt?: string | null
+    },
+  ) {
+    return this.request<{ grant: { id: string } }>(`/pockets/${pocketId}/grants`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  async updateGrant(
+    grantId: string,
+    update: Partial<{
+      maxPerTxUsd: number | null
+      maxPerDayUsd: number | null
+      allowedRecipients: string[] | null
+      allowedTokens: string[] | null
+    }>,
+  ) {
+    return this.request<{ grant: any }>(`/grants/${grantId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    })
+  }
+
+  async revokeGrant(grantId: string) {
+    return this.request<{ id: string; revoked: boolean }>(`/grants/${grantId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ── x402 Receipts (paywall payment audit trail) ─────────────────────────────
+
+  async listReceipts(pocketId: string, limit = 50) {
+    return this.request<{
+      receipts: Array<{
+        id: string
+        resourceUrl: string
+        method: string
+        txHash: string
+        amount: string
+        token: string
+        amountUsd: string | null
+        payTo: string
+        finalStatus: number | null
+        succeeded: boolean
+        paidAt: string
+        explorerUrl: string
+      }>
+    }>(`/pockets/${pocketId}/receipts?limit=${limit}`)
   }
 
   // ── Pockets ─────────────────────────────────────────────────────────────────
   async listPockets() {
     return this.request<{ pockets: any[] }>('/pockets')
+  }
+
+  async createPocket(name: string) {
+    return this.request<{ pocket: { id: string; name: string } }>('/pockets', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
   }
 
   async getPocket(id: string) {

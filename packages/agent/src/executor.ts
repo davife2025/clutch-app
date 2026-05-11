@@ -228,18 +228,70 @@ export class ClutchToolExecutor implements ToolExecutor {
     if (!this.config.wcManager) return { error: 'WalletConnect not configured' }
     if (!meta.wcSessionTopic) return { error: 'No active WalletConnect session for this wallet' }
 
-    // Solana via WalletConnect — production would build the full versioned tx
-    // and serialize it for the user's wallet to sign. This is the structured
-    // payload the wallet receives.
-    return {
-      pending: true,
-      method: 'walletconnect',
-      message: 'Transaction sent to your wallet for approval',
-      chain: 'solana',
-      fromAddress: meta.address,
-      toAddress,
-      amount,
-      token,
+    try {
+      const decimals = SPL_DECIMALS[token] ?? 9
+      const amountRaw = BigInt(Math.floor(Number(amount) * 10 ** decimals))
+      const connector = this.config.registry.solana()
+
+      // 1. Build the unsigned versioned transaction
+      const { PublicKey, VersionedTransaction } = await import('@solana/web3.js')
+      const fromPubkey = new PublicKey(meta.address)
+      const { tx, blockhash, lastValidBlockHeight } = await connector.buildTransferTransaction(
+        fromPubkey,
+        {
+          to: toAddress,
+          amount: amountRaw,
+          token,
+          chain: 'solana',
+        },
+      )
+
+      // 2. Serialize the (unsigned) tx for WC — the wallet expects base64
+      const serialized = Buffer.from(tx.serialize()).toString('base64')
+
+      // 3. Send to the user's wallet via WalletConnect — the wallet pops up,
+      //    user approves, returns the signed transaction.
+      //
+      //    Per Solana WalletConnect spec, the response is a base64 signed tx.
+      const signedBase64 = await this.config.wcManager.signSolanaTransaction(
+        meta.wcSessionTopic,
+        serialized,
+      )
+
+      // 4. Deserialize the signed tx and submit
+      const signedBuf = Buffer.from(signedBase64, 'base64')
+      const signedTx = VersionedTransaction.deserialize(signedBuf)
+
+      const receipt = await connector.sendSignedTransaction(
+        signedTx,
+        blockhash,
+        lastValidBlockHeight,
+      )
+
+      return {
+        success: receipt.status === 'success',
+        txHash: receipt.txHash,
+        chain: 'solana',
+        method: 'walletconnect',
+        fromAddress: meta.address,
+        toAddress,
+        amount,
+        token,
+        gasUsed: receipt.gasUsed.toString(),
+        status: receipt.status,
+        explorerUrl: `https://solscan.io/tx/${receipt.txHash}`,
+      }
+    } catch (err) {
+      // Common failure modes: user rejected in wallet, session expired,
+      // network error. Surface a clear message.
+      const message = (err as Error).message ?? String(err)
+      if (message.toLowerCase().includes('user') && message.toLowerCase().includes('reject')) {
+        return { error: 'Payment rejected in your wallet' }
+      }
+      if (message.toLowerCase().includes('session')) {
+        return { error: 'WalletConnect session expired — reconnect this wallet' }
+      }
+      return { error: `WalletConnect signing failed: ${message}` }
     }
   }
 

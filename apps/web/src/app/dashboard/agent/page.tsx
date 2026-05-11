@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Send, Sparkles, ArrowRight, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Send, Sparkles, ArrowRight, Loader2, Shield } from 'lucide-react'
 import { api } from '@/lib/api'
 
 interface Message {
@@ -115,9 +116,9 @@ export default function AgentPage() {
 function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
   const suggestions = [
     "What's in my pocket?",
-    'How much SOL do I have?',
-    'Which wallet should I use to pay 5 USDC?',
-    'Estimate the fee for sending 1 USDC on Solana',
+    'Quote me a swap from 1 SOL to USDC',
+    'Estimate the fee for sending 1 USDC',
+    'Which wallet pays the cheapest gas?',
   ]
 
   return (
@@ -127,8 +128,8 @@ function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
       </div>
       <h3 className="font-display text-3xl text-cream mb-3">Your Solana-native agent</h3>
       <p className="text-ink-200 mb-10">
-        Ask anything about your pocket. The agent knows your balances, can estimate Solana fees,
-        and execute payments through the right wallet.
+        Ask about your pocket, quote a swap via Jupiter, or pay anyone — the agent picks the
+        right wallet, respects your spending policy, and routes through Solana.
       </p>
       <div className="grid grid-cols-2 gap-3">
         {suggestions.map((s) => (
@@ -171,12 +172,12 @@ function PayModal({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState('USDC')
   const [memo, setMemo] = useState('')
   const [result, setResult] = useState<any>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
+    setError(null)
     setResult(null)
     setLoading(true)
 
@@ -187,12 +188,24 @@ function PayModal({ onClose }: { onClose: () => void }) {
     setLoading(false)
 
     if (error) {
-      setError(error.message)
+      setError(error)
       return
     }
 
     setResult(data)
   }
+
+  // Policy denial codes that warrant the special treatment
+  const POLICY_CODES = [
+    'TX_LIMIT_EXCEEDED',
+    'DAILY_LIMIT_EXCEEDED',
+    'RECIPIENT_BLOCKED',
+    'RECIPIENT_NOT_ALLOWED',
+    'TOKEN_BLOCKED',
+    'TOKEN_NOT_ALLOWED',
+    'POLICY_DENIED',
+  ]
+  const isPolicyDenial = error && POLICY_CODES.includes(error.code)
 
   return (
     <div className="fixed inset-0 bg-ink-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -241,9 +254,27 @@ function PayModal({ onClose }: { onClose: () => void }) {
             </div>
             <Field label="Memo (optional)" value={memo} onChange={setMemo} placeholder="What's this for?" />
 
-            {error && (
+            {error && isPolicyDenial && (
+              <div className="px-4 py-3 rounded-lg bg-moss/5 border border-moss/30 text-sm">
+                <div className="flex items-start gap-3">
+                  <Shield className="w-4 h-4 text-moss shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-moss font-medium mb-1">Blocked by your spending policy</p>
+                    <p className="text-ink-200">{error.message}</p>
+                    <Link
+                      href="/dashboard/policy"
+                      className="inline-flex items-center gap-1 mt-2 text-xs text-moss hover:underline"
+                    >
+                      Adjust policy →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && !isPolicyDenial && (
               <div className="px-4 py-3 rounded-lg bg-rust/10 border border-rust/30 text-rust text-sm">
-                {error}
+                {error.message}
               </div>
             )}
 

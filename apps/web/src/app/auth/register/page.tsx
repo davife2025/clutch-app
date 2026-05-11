@@ -28,6 +28,7 @@ export default function RegisterPage() {
 
     api.setToken(data.token)
     api.setPocketId(data.pocketId)
+    api.setAnonymous(false)
     router.push('/dashboard')
   }
 

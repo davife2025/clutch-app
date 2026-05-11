@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Activity as ActivityIcon, ExternalLink } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Activity as ActivityIcon, ExternalLink, Shield } from 'lucide-react'
 import { api } from '@/lib/api'
 import { truncateAddress, formatRelativeTime } from '@/lib/format'
 
@@ -56,24 +56,37 @@ export default function ActivityPage() {
               {transactions.map((tx) => (
                 <tr
                   key={tx.id}
-                  className="border-b border-ink-700/40 last:border-0 hover:bg-ink-700/20 transition"
+                  className={`border-b border-ink-700/40 last:border-0 hover:bg-ink-700/20 transition ${
+                    tx.status === 'policy_denied' ? 'opacity-70' : ''
+                  }`}
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          tx.type === 'deposit'
+                          tx.status === 'policy_denied'
                             ? 'bg-moss/10 text-moss'
-                            : 'bg-gold/10 text-gold'
+                            : tx.type === 'deposit'
+                              ? 'bg-moss/10 text-moss'
+                              : 'bg-gold/10 text-gold'
                         }`}
                       >
-                        {tx.type === 'deposit' ? (
+                        {tx.status === 'policy_denied' ? (
+                          <Shield className="w-4 h-4" />
+                        ) : tx.type === 'deposit' ? (
                           <ArrowDownLeft className="w-4 h-4" />
                         ) : (
                           <ArrowUpRight className="w-4 h-4" />
                         )}
                       </div>
-                      <span className="capitalize text-cream">{tx.type}</span>
+                      <div>
+                        <span className="capitalize text-cream">{tx.type}</span>
+                        {tx.status === 'policy_denied' && tx.memo ? (
+                          <p className="text-xs text-ink-400 italic mt-0.5 max-w-xs truncate">
+                            {tx.memo}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm font-mono text-ink-200">
@@ -89,10 +102,12 @@ export default function ActivityPage() {
                           ? 'bg-moss/10 text-moss border border-moss/20'
                           : tx.status === 'pending'
                             ? 'bg-gold/10 text-gold border border-gold/20'
-                            : 'bg-rust/10 text-rust border border-rust/20'
+                            : tx.status === 'policy_denied'
+                              ? 'bg-moss/10 text-moss border border-moss/20'
+                              : 'bg-rust/10 text-rust border border-rust/20'
                       }`}
                     >
-                      {tx.status}
+                      {tx.status === 'policy_denied' ? 'blocked' : tx.status}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-ink-300">

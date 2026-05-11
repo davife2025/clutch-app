@@ -1,4 +1,25 @@
-import Anthropic from '@anthropic-ai/sdk'
+/**
+ * ClutchAgent — payment routing, analysis, and chat through Kimi K2.
+ *
+ * Uses Hugging Face Inference Providers, which exposes an OpenAI-compatible
+ * endpoint that fans out to any of HF's hosted providers (Together, Fireworks,
+ * Hyperbolic, Novita, etc). The default model is moonshotai/Kimi-K2-Instruct-0905
+ * — strong tool-use, 256k context, much cheaper than Claude.
+ *
+ * Override behavior via env:
+ *   HF_TOKEN                    — required
+ *   CLUTCH_LLM_BASE_URL         — defaults to https://router.huggingface.co/v1
+ *   CLUTCH_LLM_MODEL            — defaults to moonshotai/Kimi-K2-Instruct-0905
+ *
+ * Why HF Inference Providers and not Moonshot directly:
+ *   HF unifies billing across 15+ providers, automatic provider failover,
+ *   and the same OpenAI API shape. If Moonshot's hosted endpoint goes down,
+ *   HF routes to Together or Fireworks transparently. Set CLUTCH_LLM_BASE_URL
+ *   to https://api.moonshot.ai/v1 if you want to hit Moonshot directly.
+ */
+
+import OpenAI from 'openai'
+import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
 import type { ChainId } from '@clutch/core'
 import type {
   PocketContext,
@@ -9,18 +30,31 @@ import type {
 } from './types.js'
 import { AGENT_TOOLS } from './tools.js'
 
-const MODEL = 'claude-sonnet-4-20250514'
+const DEFAULT_BASE_URL = 'https://router.huggingface.co/v1'
+const DEFAULT_MODEL = 'moonshotai/Kimi-K2-Instruct-0905'
 const MAX_TOOL_ROUNDS = 8
+const TEMPERATURE = 0.6 // Kimi K2's recommended temperature
 
 export interface ToolExecutor {
   execute(toolName: string, input: Record<string, string>): Promise<unknown>
 }
 
 export class ClutchAgent {
-  private client: Anthropic
+  private client: OpenAI
+  private model: string
 
   constructor(apiKey?: string) {
-    this.client = new Anthropic({ apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY })
+    const token = apiKey ?? process.env.HF_TOKEN ?? process.env.HUGGINGFACE_TOKEN
+    if (!token) {
+      // Don't throw at construction time — allow analysis-only flows to succeed
+      // even without a token. Throw on first actual API call instead.
+      console.warn('[ClutchAgent] HF_TOKEN not set — LLM calls will fail until set')
+    }
+    this.client = new OpenAI({
+      apiKey: token ?? 'missing',
+      baseURL: process.env.CLUTCH_LLM_BASE_URL ?? DEFAULT_BASE_URL,
+    })
+    this.model = process.env.CLUTCH_LLM_MODEL ?? DEFAULT_MODEL
   }
 
   // ── Payment routing (decide only) ──────────────────────────────────────────
@@ -30,59 +64,66 @@ export class ClutchAgent {
     request: PaymentRequest,
     executor: ToolExecutor,
   ): Promise<AgentDecision> {
-    const messages: Anthropic.Messages.MessageParam[] = [
+    const messages: ChatCompletionMessageParam[] = [
+      { role: 'system', content: buildPaymentSystemPrompt(context) },
       { role: 'user', content: buildPaymentUserMessage(request) },
     ]
+    const tools = toOpenAITools(AGENT_TOOLS)
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await this.client.messages.create({
-        model: MODEL,
-        max_tokens: 1024,
-        system: buildPaymentSystemPrompt(context),
-        tools: AGENT_TOOLS as any,
+      const response = await this.client.chat.completions.create({
+        model: this.model,
         messages,
+        tools,
+        temperature: TEMPERATURE,
+        max_tokens: 1024,
       })
+      const msg = response.choices[0]?.message
+      if (!msg) throw new Error('Empty response from LLM')
 
-      messages.push({ role: 'assistant', content: response.content })
+      messages.push(msg)
 
-      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = []
+      // No tool calls? The model is just talking — allow it but don't loop forever.
+      if (!msg.tool_calls || msg.tool_calls.length === 0) {
+        throw new Error(`Agent did not call select_payment_wallet. Reply: ${msg.content ?? ''}`)
+      }
+
       let decision: AgentDecision | null = null
+      for (const tc of msg.tool_calls) {
+        if (tc.type !== 'function') continue
+        const name = tc.function.name
+        const input = safeParseJson(tc.function.arguments) as Record<string, any>
 
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue
-
-        if (block.name === 'select_payment_wallet') {
-          const input = block.input as any
+        if (name === 'select_payment_wallet') {
           decision = {
-            walletId: input.walletId,
+            walletId: String(input.walletId),
             chain: input.chain as ChainId,
-            token: input.token,
-            reasoning: input.reasoning,
-            confidence: input.confidence,
+            token: String(input.token),
+            reasoning: String(input.reasoning ?? ''),
+            confidence: (input.confidence ?? "medium") as "high" | "medium" | "low",
           }
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
             content: JSON.stringify({ confirmed: true }),
           })
-        } else if (block.name === 'execute_payment' || block.name === 'swap_tokens') {
-          // In resolve-only mode, don't execute on-chain actions — just confirm selection
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
+        } else if (name === 'execute_payment' || name === 'swap_tokens') {
+          // resolve-only mode: don't actually execute
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
             content: JSON.stringify({ skipped: true, reason: 'resolve-only mode' }),
           })
         } else {
-          const result = await executor.execute(block.name, block.input as Record<string, string>)
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
+          const result = await executor.execute(name, input)
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
             content: JSON.stringify(result),
           })
         }
       }
 
-      messages.push({ role: 'user', content: toolResults })
       if (decision) return decision
     }
 
@@ -96,65 +137,71 @@ export class ClutchAgent {
     request: PaymentRequest,
     executor: ToolExecutor,
   ): Promise<PaymentExecution> {
-    const messages: Anthropic.Messages.MessageParam[] = [
+    const messages: ChatCompletionMessageParam[] = [
+      { role: 'system', content: buildPaymentSystemPrompt(context) },
       {
         role: 'user',
-        content: buildPaymentUserMessage(request) +
+        content:
+          buildPaymentUserMessage(request) +
           '\n\nAfter selecting the wallet, ALSO call execute_payment to send the transaction.',
       },
     ]
+    const tools = toOpenAITools(AGENT_TOOLS)
 
     let decision: AgentDecision | null = null
     let execution: any = null
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await this.client.messages.create({
-        model: MODEL,
-        max_tokens: 1024,
-        system: buildPaymentSystemPrompt(context),
-        tools: AGENT_TOOLS as any,
+      const response = await this.client.chat.completions.create({
+        model: this.model,
         messages,
+        tools,
+        temperature: TEMPERATURE,
+        max_tokens: 1024,
       })
+      const msg = response.choices[0]?.message
+      if (!msg) throw new Error('Empty response from LLM')
 
-      messages.push({ role: 'assistant', content: response.content })
+      messages.push(msg)
 
-      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = []
+      if (!msg.tool_calls || msg.tool_calls.length === 0) {
+        throw new Error(`Agent stopped without executing. Reply: ${msg.content ?? ''}`)
+      }
 
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue
+      for (const tc of msg.tool_calls) {
+        if (tc.type !== 'function') continue
+        const name = tc.function.name
+        const input = safeParseJson(tc.function.arguments) as Record<string, any>
 
-        if (block.name === 'select_payment_wallet') {
-          const input = block.input as any
+        if (name === 'select_payment_wallet') {
           decision = {
-            walletId: input.walletId,
+            walletId: String(input.walletId),
             chain: input.chain as ChainId,
-            token: input.token,
-            reasoning: input.reasoning,
-            confidence: input.confidence,
+            token: String(input.token),
+            reasoning: String(input.reasoning ?? ''),
+            confidence: (input.confidence ?? "medium") as "high" | "medium" | "low",
           }
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
             content: JSON.stringify({ confirmed: true, message: 'Now call execute_payment' }),
           })
-        } else if (block.name === 'execute_payment') {
-          execution = await executor.execute(block.name, block.input as Record<string, string>)
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
+        } else if (name === 'execute_payment') {
+          execution = await executor.execute(name, input)
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
             content: JSON.stringify(execution),
           })
         } else {
-          const result = await executor.execute(block.name, block.input as Record<string, string>)
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
+          const result = await executor.execute(name, input)
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
             content: JSON.stringify(result),
           })
         }
       }
-
-      messages.push({ role: 'user', content: toolResults })
 
       if (decision && execution) {
         return {
@@ -173,22 +220,25 @@ export class ClutchAgent {
     throw new Error('Agent exceeded max tool rounds without completing payment')
   }
 
-  // ── Analysis ───────────────────────────────────────────────────────────────
+  // ── Analysis (no tools, JSON output) ──────────────────────────────────────
 
   async analyzePocket(context: PocketContext): Promise<AgentAnalysis> {
-    const response = await this.client.messages.create({
-      model: MODEL,
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: TEMPERATURE,
       max_tokens: 2048,
-      system: `You are Clutch's AI portfolio analyst. Clutch is a Solana-first wallet pocket.
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You are Clutch's AI portfolio analyst. Clutch is a Solana-first wallet pocket.
 Analyse the user's portfolio and return ONLY valid JSON — no markdown, no preamble.`,
-      messages: [{ role: 'user', content: buildAnalysisPrompt(context) }],
+        },
+        { role: 'user', content: buildAnalysisPrompt(context) },
+      ],
     })
 
-    const text = response.content
-      .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-
+    const text = response.choices[0]?.message?.content ?? ''
     try {
       return JSON.parse(text.trim()) as AgentAnalysis
     } catch {
@@ -202,30 +252,60 @@ Analyse the user's portfolio and return ONLY valid JSON — no markdown, no prea
     }
   }
 
-  // ── Chat ───────────────────────────────────────────────────────────────────
+  // ── Chat (streaming) ──────────────────────────────────────────────────────
 
   async *chat(
     context: PocketContext,
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    executor: ToolExecutor,
+    _executor: ToolExecutor,
   ): AsyncGenerator<string> {
-    const stream = this.client.messages.stream({
-      model: MODEL,
+    const stream = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: TEMPERATURE,
       max_tokens: 1024,
-      system: buildChatSystemPrompt(context),
-      tools: AGENT_TOOLS as any,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      stream: true,
+      messages: [
+        { role: 'system', content: buildChatSystemPrompt(context) },
+        ...messages.map((m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
+      ],
     })
 
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        yield event.delta.text
-      }
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content
+      if (delta) yield delta
     }
   }
 }
 
-// ── Prompt builders ──────────────────────────────────────────────────────────
+// ── Tool format conversion ────────────────────────────────────────────────────
+//
+// AGENT_TOOLS uses Anthropic's shape ({ name, description, input_schema }).
+// OpenAI's chat completions API uses ({ type: 'function', function: { name,
+// description, parameters }}). Convert at runtime so we don't have to touch
+// the canonical tool definitions.
+
+function toOpenAITools(
+  tools: Array<{ name: string; description: string; input_schema: any }>,
+): ChatCompletionTool[] {
+  return tools.map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.input_schema,
+    },
+  }))
+}
+
+function safeParseJson(s: string): unknown {
+  try {
+    return JSON.parse(s)
+  } catch {
+    return {}
+  }
+}
+
+// ── Prompt builders (same as before) ──────────────────────────────────────────
 
 function buildPaymentSystemPrompt(ctx: PocketContext): string {
   const solanaWallets = ctx.wallets.filter((w) => w.wallet.chain === 'solana')
