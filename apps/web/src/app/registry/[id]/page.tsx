@@ -64,6 +64,10 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const truncatedKey = `${agent.publicKey.slice(0, 8)}...${agent.publicKey.slice(-8)}`
+  const isAuthed = api.isAuthenticated()
+  const authorizeHref = isAuthed
+    ? `/dashboard/authorize/${agent.id}`
+    : `/auth/login?next=/dashboard/authorize/${agent.id}`
 
   return (
     <main className="min-h-screen bg-ink-900 text-cream">
@@ -189,10 +193,10 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
             access in one click any time. The agent never sees your wallet keys.
           </p>
           <Link
-            href={`/auth/login?next=/dashboard/authorize/${agent.id}`}
+            href={authorizeHref}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-gold hover:bg-gold-300 text-ink-900 rounded-lg font-medium transition"
           >
-            Sign in to authorize
+            {isAuthed ? 'Authorize this agent' : 'Sign in to authorize'}
           </Link>
           <p className="text-xs text-ink-400 mt-3">
             Don't have a Clutch pocket?{' '}

@@ -1,92 +1,104 @@
-# Missing route files — `grants.js not found` fix
+# Complete web state — every dashboard page in one drop
 
-## What broke
+## What's happening
 
-```
-Error [ERR_MODULE_NOT_FOUND]: Cannot find module 
-'/opt/render/project/src/apps/api/src/routes/grants.js' 
-imported from /opt/render/project/src/apps/api/src/index.ts
-```
+The "grants 404" is the same shape of problem as the "Published" and "Docs" links being missing, the same shape as the "registered_agents table doesn't exist" 500, the same shape as the `tweetnacl` missing dependency.
 
-`index.ts` imports `./routes/grants.js`, but `grants.ts` doesn't exist in your deployed repo. When tsx runs index.ts, Node tries to resolve every import — and crashes on the first one that's missing.
+Across sessions 19-26 we added new sidebar items in different deltas. Each delta included the new page file plus an updated Sidebar.tsx. Across many deltas, some files made it to your repo and some didn't. The result: your sidebar shows nav items that point to pages your repo doesn't have.
 
-## Why this happened
+Rather than chase one missing file at a time, this archive contains **the complete current state of every dashboard page**. Drop it in, push, done.
 
-Sessions 19-26 added several new route files. Across the deltas:
-- `receipts.ts` (session 19 — x402 receipts ledger)
-- `agents-mgmt.ts` (session 21 — consumer agent flow)
-- `registry.ts` (session 22 — public agent registry)
-- `grants.ts` (session 23 — per-pocket authorizations) ← crashed here
-- `agent-pay.ts` (session 24 — signed payment requests)
+## What's in here
 
-Each was shipped in its own delta archive. Looks like one or more of them didn't make it into the repo before the deploy. Specifically `grants.ts` is missing — and very likely `agent-pay.ts` is too (it's imported on the next line after grants).
+25 files. Every page the sidebar links to, plus the shared components and lib files those pages depend on.
 
-After `grants.ts` is added, Node may still crash on `agent-pay.ts` or any other missing file. So instead of fixing this one file at a time, **this archive contains every API file the current `index.ts` depends on.**
+### Dashboard pages (16 files)
+- `apps/web/src/app/dashboard/layout.tsx` — guarded layout with auth check
+- `apps/web/src/app/dashboard/page.tsx` — Pocket (overview)
+- `apps/web/src/app/dashboard/wallets/page.tsx` — Wallets
+- `apps/web/src/app/dashboard/agents/page.tsx` — My agents (personal templates) list
+- `apps/web/src/app/dashboard/agents/new/page.tsx` — Create personal agent
+- `apps/web/src/app/dashboard/agents/[id]/page.tsx` — Personal agent detail
+- `apps/web/src/app/dashboard/grants/page.tsx` — **Grants (was 404)**
+- `apps/web/src/app/dashboard/authorize/[id]/page.tsx` — Agent authorization consent
+- `apps/web/src/app/dashboard/my-agents/page.tsx` — Published agents (registered to public registry)
+- `apps/web/src/app/dashboard/my-agents/new/page.tsx` — Register agent form
+- `apps/web/src/app/dashboard/agent/page.tsx` — Chat
+- `apps/web/src/app/dashboard/activity/page.tsx` — Activity feed
+- `apps/web/src/app/dashboard/receipts/page.tsx` — x402 receipts audit log
+- `apps/web/src/app/dashboard/policy/page.tsx` — Spending policy
+- `apps/web/src/app/dashboard/docs/page.tsx` — Developer docs
+- `apps/web/src/app/dashboard/settings/page.tsx` — Settings
 
-## What's in the archive
+### Public registry pages (2 files)
+- `apps/web/src/app/registry/page.tsx` — Public agent directory
+- `apps/web/src/app/registry/[id]/page.tsx` — Public agent detail
 
-13 files covering the complete API state needed to run:
-
-**Routes** (the five that were likely missing):
-- `apps/api/src/routes/receipts.ts`
-- `apps/api/src/routes/agents-mgmt.ts`
-- `apps/api/src/routes/registry.ts`
-- `apps/api/src/routes/grants.ts`
-- `apps/api/src/routes/agent-pay.ts`
-
-**Updated routes** (probably already in your repo, but included to match):
-- `apps/api/src/routes/pocket.ts` (BigInt serialization fix)
-
-**Wiring** (ties it all together):
-- `apps/api/src/index.ts` (BigInt polyfill + all route mounts)
-- `apps/api/src/db/schema.ts` (registered_agents, agent_grants, x402_receipts, agents tables)
-- `apps/api/src/db/relations.ts` (relations for the new tables)
-
-**Services**:
-- `apps/api/src/services/agent.service.ts` (deterministic payment execution)
-- `apps/api/src/services/policy.service.ts` (policy engine)
-
-**Migrations**:
-- `apps/api/drizzle.config.ts` (BigInt polyfill for drizzle-kit)
-- `apps/api/drizzle/0002_manual_missing_tables.sql` (manual SQL fallback for Supabase)
+### Shared layout & state (7 files)
+- `apps/web/src/components/layout/Sidebar.tsx` — Full sidebar nav
+- `apps/web/src/components/layout/UpgradeBanner.tsx` — Anonymous account banner
+- `apps/web/src/components/brand/Logo.tsx` — Shield + coin logo
+- `apps/web/src/lib/api.ts` — API client (all methods)
+- `apps/web/src/lib/use-auth.ts` — Auth guard hook with SSR-safe mount
+- `apps/web/src/lib/format.ts` — Number/USD formatters
+- `apps/web/src/hooks/useClutchSocket.ts` — WebSocket with circuit breaker
 
 ## How to apply
 
-1. Extract this archive at the root of your repo. It will overwrite or create each file at its exact path.
-
-2. Verify the routes directory now has everything:
 ```bash
-ls apps/api/src/routes/
-```
-You should see: `agent-pay.ts`, `agent.ts`, `agents-mgmt.ts`, `auth.ts`, `balance.ts`, `connect.ts`, `funds.ts`, `grants.ts`, `health.ts`, `pay.ts`, `pocket.ts`, `policy.ts`, `receipts.ts`, `registry.ts`, `transactions.ts`, `wallet.ts`, `webhook.ts`, `x402.ts`.
+# 1. Extract this archive at your repo root
+# (will overwrite or create each file at its exact path)
 
-3. Push to GitHub. Render redeploys automatically. The deploy should now start cleanly.
+# 2. Verify all pages now exist
+ls apps/web/src/app/dashboard/grants/    # should show page.tsx
+ls apps/web/src/app/dashboard/receipts/  # should show page.tsx
+ls apps/web/src/app/dashboard/my-agents/ # should show page.tsx and new/
 
-4. **If you haven't already done the DB migration**, run it now. Either:
-   - `pnpm --filter @clutch/api db:push` locally with DATABASE_URL set
-   - Or open Supabase → SQL Editor → paste `apps/api/drizzle/0002_manual_missing_tables.sql` → Run
-
-Without the migration, the `registered_agents` and `agent_grants` tables still don't exist and `/registry/my-agents` will still 500.
-
-## After deploy succeeds
-
-You'll see in the Render logs:
-```
-> @clutch/api@0.1.0 start /opt/render/project/src/apps/api
-> tsx src/index.ts
-🫙 Clutch API v0.1.0 → http://0.0.0.0:3001
+# 3. Push to GitHub, Vercel redeploys
+git add . && git commit -m "fix: complete web app state" && git push
 ```
 
-Visit your deployed site, sign up fresh, walk through the dashboard. The bugs we fixed earlier this session should be gone. The registry, grants, and receipts pages should load.
+## After deploy
 
-## Why one big delta instead of patching one file
+Hard-refresh your browser (`Cmd+Shift+R` / `Ctrl+F5`) to clear the cached JS bundle, then sign in and click every sidebar item. Every link should land on a real page. The flow you can now demo:
 
-The original Render error was for `grants.ts`. After fixing that, the very next import (`agent-pay.ts`) would likely fail too. Then maybe `registry.ts`. Each fix would require another deploy cycle. **Better to ship all of them at once and stop iterating on missing files.**
+1. **Pocket** — your balances + policy status
+2. **Wallets** — add/manage wallets
+3. **My agents** — personal payment templates inside this pocket
+4. **Grants** — agents you've authorized from this pocket to spend on your behalf
+5. **Published** — agents you've registered to the public registry
+6. **Chat** — talk to Kimi K2 about your pocket
+7. **Activity** — transaction feed
+8. **Receipts** — every x402 paywall payment
+9. **Policy** — spending rules
+10. **Docs** — SDK / embed instructions
+11. **Settings** — account
 
-If your repo already has some of these files and they're identical to what's here, no harm done — same content, same outcome. If they differ, this delta is the source of truth.
+## Important: pages that need the database tables
 
-## What I want to flag honestly
+Some pages will still 500 if the database migration hasn't been run. Specifically:
+- **Grants** queries `agent_grants` table
+- **Published** queries `registered_agents` table
+- **Receipts** queries `x402_receipts` table
 
-This is the kind of bug that happens at the end of a long build, when multiple deltas have been applied in sequence and one or two files slipped through. It's not a code problem — every file compiles, every test passes, the system works. It's a coordination problem between many deltas.
+If any of these 500 after deploying, run the migration:
 
-For future runs: if a deploy crashes with `MODULE_NOT_FOUND`, the fastest fix is to run `git status` and see what's actually in your repo, then compare against `index.ts`'s imports. The mismatch is the problem.
+```bash
+# Option A
+cd apps/api && pnpm db:push
+
+# Option B (if drizzle-kit still crashes on BigInt)
+# Open Supabase → SQL Editor → paste apps/api/drizzle/0002_manual_missing_tables.sql → Run
+```
+
+## Why this kept happening across the last hour
+
+Multiple deltas. Each delta included some subset of the page files. Some files made it to your repo, some didn't. The sidebar links accumulated — every session added another nav item — but the corresponding page files didn't always travel with it.
+
+This archive is the canonical state. After applying, your web app matches my local copy exactly. Future bugs should be product issues (UX, edge cases, real-world data), not "file is missing."
+
+## What I want to acknowledge
+
+This kind of "file missing across multiple deltas" issue is annoying. We've hit it three times in the last hour with different files. I should have shipped a full-codebase archive earlier instead of stitched deltas. For future builds, I'll lean toward shipping complete states more often than incremental ones — easier for you to verify in one drop than to chase down what's missing.
+
+After this applies cleanly: the 404 is gone, the missing pages are present, and you have a complete deployable web app. Verify by clicking each sidebar item. If anything else 404s or errors, send me which one and I'll fix it specifically.

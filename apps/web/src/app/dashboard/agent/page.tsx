@@ -126,10 +126,9 @@ function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
       <div className="inline-flex w-14 h-14 rounded-2xl bg-gold/10 border border-gold/20 items-center justify-center text-gold mb-6">
         <Sparkles className="w-7 h-7" />
       </div>
-      <h3 className="font-display text-3xl text-cream mb-3">Your Solana-native agent</h3>
+      <h3 className="font-display text-3xl text-cream mb-3">How can I help?</h3>
       <p className="text-ink-200 mb-10">
-        Ask about your pocket, quote a swap via Jupiter, or pay anyone — the agent picks the
-        right wallet, respects your spending policy, and routes through Solana.
+        Ask anything about your pocket, or tell me what to pay.
       </p>
       <div className="grid grid-cols-2 gap-3">
         {suggestions.map((s) => (
