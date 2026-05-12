@@ -4,7 +4,7 @@
 
 Spending policies, audit trails, x402 paywall handling, and one-click revocation — for any agent built on or for Solana.
 
-[clutch.app](https://clutch.app)  ·  [Registry](https://clutch.app/registry)  ·  [Docs](https://clutch.app/dashboard/docs)
+[clutch.app](https://clutch-app-web.vercel.app)  ·  [Registry]()  ·  [Docs](https://clutch-app-web.vercel.app/dashboard/docs)
 
 ---
 
