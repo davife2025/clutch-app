@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Send, Sparkles, ExternalLink, Pause, Play, Ban, AlertCircle, Info } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -33,8 +33,8 @@ interface Receipt {
   paidAt: string
 }
 
-export default function AgentDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function AgentDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params
   const [agent, setAgent] = useState<Agent | null>(null)
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [instruction, setInstruction] = useState('')

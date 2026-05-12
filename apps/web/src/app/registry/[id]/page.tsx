@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Bot, ExternalLink, Key, Shield, Users } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
@@ -22,8 +22,8 @@ interface Agent {
   createdAt: string
 }
 
-export default function AgentDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function AgentDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params
   const [agent, setAgent] = useState<Agent | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
