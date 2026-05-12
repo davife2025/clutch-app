@@ -74,14 +74,22 @@ class ApiClient {
     try {
       const res = await fetch(`${API_URL}${path}`, { ...options, headers })
 
-      // Handle 401 globally: token is invalid/expired. Clear it and let the
-      // auth guard redirect on the next mount. We DON'T redirect from here
-      // because that races with React rendering and creates the loop the
-      // user was hitting (page mounts → 401 → redirect to login → user logs
-      // in → redirect to page → 401 again because token didn't actually
-      // refresh, etc).
-      if (res.status === 401 && token) {
-        this.clearToken()
+      // IMPORTANT: do NOT clear the token on a single 401.
+      //
+      // The previous version did `clearToken()` on every 401, which produced
+      // the bug where clicking one tab whose API endpoint failed (e.g. a
+      // missing DB table returning 500-as-401, a backend env var change, a
+      // single misbehaving route) wiped the entire user session. Then on the
+      // next render the auth guard redirected to /auth/login because the
+      // token was gone — even though it was structurally valid the whole time.
+      //
+      // Now: log the 401 for debugging, surface it as an error to the caller,
+      // and let the auth guard decide whether to truly redirect based on its
+      // own check at mount time. If the token IS truly invalid, every
+      // subsequent request will also 401 — but the page can show a meaningful
+      // error instead of silently dumping the session.
+      if (res.status === 401) {
+        console.warn(`[api] 401 from ${options.method ?? 'GET'} ${path} — token may be stale, but not clearing yet`)
       }
 
       const json = await res.json()

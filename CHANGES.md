@@ -1,104 +1,58 @@
-# Complete web state — every dashboard page in one drop
+# "Click Grants → bounce to landing → log in again" — the real diagnosis
 
-## What's happening
+## Why this kept happening
 
-The "grants 404" is the same shape of problem as the "Published" and "Docs" links being missing, the same shape as the "registered_agents table doesn't exist" 500, the same shape as the `tweetnacl` missing dependency.
+This is the third auth-related bug today. I want to be honest about what was actually wrong because the previous fixes patched symptoms, not the cause.
 
-Across sessions 19-26 we added new sidebar items in different deltas. Each delta included the new page file plus an updated Sidebar.tsx. Across many deltas, some files made it to your repo and some didn't. The result: your sidebar shows nav items that point to pages your repo doesn't have.
+The real bug: **our own API client was wiping the user's token whenever ANY single request returned 401.** The 401 handler was added as a "fix" for expired tokens, but it was too aggressive — if one broken endpoint returned 401, the entire session was destroyed.
 
-Rather than chase one missing file at a time, this archive contains **the complete current state of every dashboard page**. Drop it in, push, done.
+So when you clicked Grants:
 
-## What's in here
+1. The page mounted, called `GET /pockets/:id/grants`
+2. That endpoint returned 401 for some reason (likely the `agent_grants` table doesn't exist yet in your database, OR `JWT_SECRET` on Render is different from the one that signed your token — both produce 401s)
+3. Our 401 handler ran `clearToken()` — **wiped your localStorage token**
+4. On the next render, `useAuthGuard` checked `isAuthenticated()` — false because token was gone — redirected you to `/auth/login`
+5. From your perspective: "I clicked Grants and got bounced to login"
 
-25 files. Every page the sidebar links to, plus the shared components and lib files those pages depend on.
+The token was structurally fine the whole time. Our own client destroyed it.
 
-### Dashboard pages (16 files)
-- `apps/web/src/app/dashboard/layout.tsx` — guarded layout with auth check
-- `apps/web/src/app/dashboard/page.tsx` — Pocket (overview)
-- `apps/web/src/app/dashboard/wallets/page.tsx` — Wallets
-- `apps/web/src/app/dashboard/agents/page.tsx` — My agents (personal templates) list
-- `apps/web/src/app/dashboard/agents/new/page.tsx` — Create personal agent
-- `apps/web/src/app/dashboard/agents/[id]/page.tsx` — Personal agent detail
-- `apps/web/src/app/dashboard/grants/page.tsx` — **Grants (was 404)**
-- `apps/web/src/app/dashboard/authorize/[id]/page.tsx` — Agent authorization consent
-- `apps/web/src/app/dashboard/my-agents/page.tsx` — Published agents (registered to public registry)
-- `apps/web/src/app/dashboard/my-agents/new/page.tsx` — Register agent form
-- `apps/web/src/app/dashboard/agent/page.tsx` — Chat
-- `apps/web/src/app/dashboard/activity/page.tsx` — Activity feed
-- `apps/web/src/app/dashboard/receipts/page.tsx` — x402 receipts audit log
-- `apps/web/src/app/dashboard/policy/page.tsx` — Spending policy
-- `apps/web/src/app/dashboard/docs/page.tsx` — Developer docs
-- `apps/web/src/app/dashboard/settings/page.tsx` — Settings
+## What the fix does
 
-### Public registry pages (2 files)
-- `apps/web/src/app/registry/page.tsx` — Public agent directory
-- `apps/web/src/app/registry/[id]/page.tsx` — Public agent detail
+Two files, two changes.
 
-### Shared layout & state (7 files)
-- `apps/web/src/components/layout/Sidebar.tsx` — Full sidebar nav
-- `apps/web/src/components/layout/UpgradeBanner.tsx` — Anonymous account banner
-- `apps/web/src/components/brand/Logo.tsx` — Shield + coin logo
-- `apps/web/src/lib/api.ts` — API client (all methods)
-- `apps/web/src/lib/use-auth.ts` — Auth guard hook with SSR-safe mount
-- `apps/web/src/lib/format.ts` — Number/USD formatters
-- `apps/web/src/hooks/useClutchSocket.ts` — WebSocket with circuit breaker
+**`apps/web/src/lib/api.ts`** — removed the `clearToken()` call from the 401 handler. A 401 from one endpoint no longer wipes your session. The 401 is logged to the console with the path that triggered it, so you can see in DevTools which endpoint is unhappy without losing your session.
+
+**`apps/web/src/app/dashboard/grants/page.tsx`** — now surfaces errors instead of silently showing an empty list. When the grants API call fails, you'll see a rust-colored card explaining what happened, with a "Retry" button and guidance: "If this says Unauthorized, the API server may have been redeployed with a different JWT secret. Sign out and back in to refresh your session."
+
+This pattern is what other tabs already do (the Pocket page from earlier). The Grants page just never had the same defensive handling.
+
+## What this does NOT fix
+
+If the underlying 401 is real — the JWT_SECRET on Render really did change, or the `agent_grants` table really doesn't exist — the Grants page will still show the error card. The bug we just fixed is "the error card destroys your session." Now you get a useful error message, can hit Retry, or can sign back in cleanly. But the underlying cause of the 401 still needs handling.
+
+## How to figure out what's actually causing the 401
+
+After deploying this fix, open Grants and check your browser DevTools console. You'll see something like:
+
+```
+[api] 401 from GET /pockets/abc123/grants — token may be stale, but not clearing yet
+```
+
+Then open the Network tab in DevTools, click that request, look at the Response. The error body tells you the cause:
+
+- `{"error":{"code":"UNAUTHORIZED","message":"Missing token"}}` — your token wasn't sent (browser problem, retry)
+- `{"error":{"code":"INVALID_TOKEN","message":"Invalid or expired token"}}` — JWT_SECRET mismatch on Render. Sign out, sign back in to get a fresh token signed with the current secret.
+- `{"error":{"code":"NOT_FOUND",...}}` — pocketId is wrong
+- 500 (not 401) — the `agent_grants` table doesn't exist. Run the database migration.
 
 ## How to apply
 
-```bash
-# 1. Extract this archive at your repo root
-# (will overwrite or create each file at its exact path)
+Drop both files in, push, redeploy. Two-minute fix.
 
-# 2. Verify all pages now exist
-ls apps/web/src/app/dashboard/grants/    # should show page.tsx
-ls apps/web/src/app/dashboard/receipts/  # should show page.tsx
-ls apps/web/src/app/dashboard/my-agents/ # should show page.tsx and new/
+## Why I want to flag this
 
-# 3. Push to GitHub, Vercel redeploys
-git add . && git commit -m "fix: complete web app state" && git push
-```
+You've been hitting auth bugs all day. Some were real (the original dashboard signup → register loop, fixed). Some were caused by my own fixes being too eager. This was one of the latter — I added the 401 handler thinking it would fix expired tokens, but I made it too aggressive and it created a worse bug.
 
-## After deploy
+If after applying this fix you STILL see "click Grants → bounce to landing," that means the auth guard itself is the problem, not just the 401 handler. In that case send me a fresh DevTools console + network log when you click Grants and I'll trace it from there. But based on the pattern, the over-aggressive 401 handler accounts for everything you described.
 
-Hard-refresh your browser (`Cmd+Shift+R` / `Ctrl+F5`) to clear the cached JS bundle, then sign in and click every sidebar item. Every link should land on a real page. The flow you can now demo:
-
-1. **Pocket** — your balances + policy status
-2. **Wallets** — add/manage wallets
-3. **My agents** — personal payment templates inside this pocket
-4. **Grants** — agents you've authorized from this pocket to spend on your behalf
-5. **Published** — agents you've registered to the public registry
-6. **Chat** — talk to Kimi K2 about your pocket
-7. **Activity** — transaction feed
-8. **Receipts** — every x402 paywall payment
-9. **Policy** — spending rules
-10. **Docs** — SDK / embed instructions
-11. **Settings** — account
-
-## Important: pages that need the database tables
-
-Some pages will still 500 if the database migration hasn't been run. Specifically:
-- **Grants** queries `agent_grants` table
-- **Published** queries `registered_agents` table
-- **Receipts** queries `x402_receipts` table
-
-If any of these 500 after deploying, run the migration:
-
-```bash
-# Option A
-cd apps/api && pnpm db:push
-
-# Option B (if drizzle-kit still crashes on BigInt)
-# Open Supabase → SQL Editor → paste apps/api/drizzle/0002_manual_missing_tables.sql → Run
-```
-
-## Why this kept happening across the last hour
-
-Multiple deltas. Each delta included some subset of the page files. Some files made it to your repo, some didn't. The sidebar links accumulated — every session added another nav item — but the corresponding page files didn't always travel with it.
-
-This archive is the canonical state. After applying, your web app matches my local copy exactly. Future bugs should be product issues (UX, edge cases, real-world data), not "file is missing."
-
-## What I want to acknowledge
-
-This kind of "file missing across multiple deltas" issue is annoying. We've hit it three times in the last hour with different files. I should have shipped a full-codebase archive earlier instead of stitched deltas. For future builds, I'll lean toward shipping complete states more often than incremental ones — easier for you to verify in one drop than to chase down what's missing.
-
-After this applies cleanly: the 404 is gone, the missing pages are present, and you have a complete deployable web app. Verify by clicking each sidebar item. If anything else 404s or errors, send me which one and I'll fix it specifically.
+Sorry for the looping. Auth state in client-side React apps is genuinely tricky — every fix opens a different edge case. This one I'm confident about because the cause is fully reproducible from reading the code, not guessing.
