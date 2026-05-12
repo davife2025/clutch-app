@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Bot, Check, Shield, AlertTriangle, ArrowRight } from 'lucide-react'
@@ -19,8 +19,8 @@ interface Agent {
   activeGrantsCount: number
 }
 
-export default function AuthorizePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function AuthorizePage({ params }: { params: { id: string } }) {
+  const { id } = params
   const router = useRouter()
   const [agent, setAgent] = useState<Agent | null>(null)
   const [loading, setLoading] = useState(true)
